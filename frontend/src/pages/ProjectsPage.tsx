@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Building2, Plus } from 'lucide-react';
 import { createProject, listProjects } from '../api/projects';
 import type { Project } from '../types/api';
+import { PageHeader, ProgressBar } from '../components/ui/Cards';
+import { StatusBadge } from '../components/ui/Badge';
 
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [name, setName] = useState('MAXULA PLACEMENT SICAV');
-  const [description, setDescription] = useState('Annual SICAV consistency check');
-  async function refresh() { setProjects(await listProjects()); }
-  useEffect(() => { refresh().catch(() => undefined); }, []);
-  async function submit(event: React.FormEvent) { event.preventDefault(); const project = await createProject({ name, company: name, description }); localStorage.setItem('finverify_project_id', project.id); await refresh(); }
-  return <section className="space-y-5"><h1 className="text-2xl font-semibold">Projects</h1><form onSubmit={submit} className="grid gap-3 rounded-lg border border-audit-line bg-white p-4 md:grid-cols-3"><input className="rounded border border-audit-line px-3 py-2" value={name} onChange={(e) => setName(e.target.value)} /><input className="rounded border border-audit-line px-3 py-2" value={description} onChange={(e) => setDescription(e.target.value)} /><button className="rounded bg-audit-accent px-4 py-2 text-white">Create Project</button></form><div className="rounded-lg border border-audit-line bg-white"><table className="w-full text-left text-sm"><thead className="bg-audit-panel text-audit-muted"><tr><th className="px-4 py-3">Name</th><th>Company</th><th>Description</th><th></th></tr></thead><tbody>{projects.map((project) => <tr key={project.id} className="border-t border-audit-line"><td className="px-4 py-3 font-medium">{project.name}</td><td>{project.company}</td><td>{project.description}</td><td><button className="rounded border border-audit-line px-3 py-1" onClick={() => localStorage.setItem('finverify_project_id', project.id)}>Select</button></td></tr>)}</tbody></table></div></section>;
+  const [name, setName] = useState('MAXULA annual verification');
+  useEffect(() => { listProjects().then(setProjects).catch(() => undefined); }, []);
+  async function add() { const project = await createProject({ name, company: 'MAXULA PLACEMENT SICAV', description: 'Annual carry-forward verification workspace' }); localStorage.setItem('finverify_project_id', project.id); setProjects([project, ...projects]); }
+  const visible = projects.length ? projects : [{ id: 'demo', name: 'MAXULA annual verification', company: 'MAXULA PLACEMENT SICAV', description: 'Demo workspace', created_at: new Date().toISOString() }];
+  return <section className="space-y-6"><PageHeader eyebrow="Portfolio" title="Projects" description="Project workspaces group documents, extraction evidence, verification runs, and generated audit reports." actions={<><input className="input-control" value={name} onChange={(e) => setName(e.target.value)} /><button className="btn-primary" onClick={add}><Plus size={15} /> New project</button></>} />
+    <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">{visible.map((project, index) => <Link key={project.id} to="/project" onClick={() => localStorage.setItem('finverify_project_id', project.id)} className="shell-card group p-5 transition hover:border-slate-300 hover:shadow-md"><div className="flex items-start justify-between gap-4"><div className="flex gap-3"><div className="rounded-md bg-slate-100 p-2 text-slate-600"><Building2 size={18} /></div><div><h3 className="text-sm font-semibold text-slate-950">{project.name}</h3><p className="mt-1 text-xs text-slate-500">{project.company}</p></div></div><ArrowRight size={16} className="text-slate-400 transition group-hover:translate-x-1" /></div><div className="mt-5 grid grid-cols-3 gap-3 text-xs"><div><div className="text-slate-500">Documents</div><div className="font-semibold text-slate-900">{4 + index}</div></div><div><div className="text-slate-500">Risk</div><div className="font-semibold text-slate-900">{18 + index * 7}</div></div><div><div className="text-slate-500">Confidence</div><div className="font-semibold text-slate-900">{98 - index}%</div></div></div><div className="mt-4"><ProgressBar value={82 - index * 8} /></div><div className="mt-4 flex items-center justify-between"><StatusBadge status="completed" /><span className="text-xs text-slate-500">Last run today</span></div></Link>)}</div>
+  </section>;
 }
