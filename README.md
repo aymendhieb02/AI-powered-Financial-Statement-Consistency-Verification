@@ -88,3 +88,28 @@ FinVerify is now centered on a canonical FinancialDocument domain model. Extract
 The CLI is only a client. Business workflow lives in PipelineOrchestrator, and reusable application services live in src/sicav_checker/services. This keeps the modular monolith simple today while allowing a future FastAPI, Streamlit, or desktop UI to reuse the same service layer.
 
 See docs/ARCHITECTURE.md for the architectural decisions and extension points.
+
+## Web Application Mode
+
+FinVerify now includes a FastAPI backend and React frontend. FastAPI routes are thin clients over the service layer and PipelineOrchestrator; business logic remains in Python services.
+
+Backend:
+
+```powershell
+python -m venv .venv
+.venv\Scriptsctivate
+pip install -r requirements.txt
+uvicorn sicav_checker.api.main:app --reload
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend API configuration lives in frontend/.env.example with VITE_API_BASE_URL=http://localhost:8000/api.
+
+The accountant workflow is: Create Project, Upload PDFs, Run Verification, Review Summary, Review Anomalies, Download Report.

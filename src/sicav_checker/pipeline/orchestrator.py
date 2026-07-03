@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sicav_checker.config import Settings, settings
-from sicav_checker.core.logging import log_stage
+from sicav_checker.core.logging import log_stage, logger
 from sicav_checker.domain.models import ComparisonReport, ComparisonResult, FinancialDocument, ValidationResult
 from sicav_checker.services.comparison_service import ComparisonService
 from sicav_checker.services.extraction_service import ExtractionService
@@ -61,6 +61,8 @@ class PipelineOrchestrator:
             documents = self.extraction_service.extract_directory(raw_dir)
             normalized = self.normalization_service.normalize_documents(documents)
             self.storage_service.save_documents(normalized)
+            extracted_lines = sum(len(statement.rows) for document in normalized for statement in document.statements.values())
+            logger.info("Extraction statistics: documents={} extracted_lines={}", len(normalized), extracted_lines)
             return normalized
 
     def compare(self) -> tuple[list[FinancialDocument], list[ComparisonResult], list[ValidationResult], list[int]]:
@@ -69,6 +71,8 @@ class PipelineOrchestrator:
             validations = self.validation_service.validate_documents(documents)
             comparisons = self.comparison_service.compare_documents(documents)
             missing_years = self._missing_years([document.document_year for document in documents if document.document_year is not None])
+            anomalies = sum(1 for item in [*comparisons, *validations] if item.status != "OK")
+            logger.info("Verification statistics: documents={} comparisons={} validations={} anomalies={}", len(documents), len(comparisons), len(validations), anomalies)
             return documents, comparisons, validations, missing_years
 
     def report(self, reports_dir: Path | None = None) -> PipelineResult:

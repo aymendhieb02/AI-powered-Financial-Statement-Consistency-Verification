@@ -197,6 +197,14 @@ class ValidationResult(BaseModel):
     anomaly: Anomaly | None = None
 
 
+
+
+class ReportResult(BaseModel):
+    run_id: str
+    report_paths: list[str] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
 class ComparisonReport(BaseModel):
     documents: list[FinancialDocument] = Field(default_factory=list)
     comparisons: list[ComparisonResult] = Field(default_factory=list)
