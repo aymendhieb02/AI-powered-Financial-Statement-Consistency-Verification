@@ -1,0 +1,1 @@
+"""Internal accounting validation."""

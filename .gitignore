@@ -1,0 +1,16 @@
+﻿.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.env
+
+# Local SICAV inputs and generated outputs
+data/raw_pdfs/*.pdf
+data/extracted_json/*.json
+data/reports/*.xlsx
+data/reports/*.json
+data/corrupted_tests/*.json
+
+# Keep data folders via .gitkeep
+!data/**/.gitkeep
