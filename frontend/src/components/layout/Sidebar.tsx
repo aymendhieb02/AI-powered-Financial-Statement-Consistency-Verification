@@ -34,7 +34,7 @@ const items = [
   { to: '/settings', label: 'Settings', icon: Settings, key: 'S' },
 ];
 
-function NavItems({ collapsed }: { collapsed: boolean }) {
+function NavItems({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   return (
     <>
       {items.map((item) => {
@@ -44,6 +44,7 @@ function NavItems({ collapsed }: { collapsed: boolean }) {
             key={item.to}
             to={item.to}
             title={item.label}
+            onClick={onNavigate}
             className={({ isActive }) =>
               'group flex items-center justify-between rounded-md px-3 py-2 text-sm transition ' +
               (isActive
@@ -65,7 +66,7 @@ function NavItems({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function SidebarPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+function SidebarPanel({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onToggle: () => void; onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className={'border-b border-slate-200 px-4 py-4 ' + (collapsed ? 'px-3' : 'px-5')}>
@@ -87,7 +88,7 @@ function SidebarPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: (
         </div>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
-        <NavItems collapsed={collapsed} />
+        <NavItems collapsed={collapsed} onNavigate={onNavigate} />
       </nav>
       {!collapsed && (
         <div className="border-t border-slate-200 p-4">
@@ -112,12 +113,12 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className={'fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex ' + width}>
+      <aside data-sidebar-nav className={'fixed inset-y-0 left-0 z-50 hidden flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex ' + width}>
         <SidebarPanel collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       </aside>
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <SheetContent className="w-[280px] p-0 lg:hidden">
-          <SidebarPanel collapsed={false} onToggle={() => setMobileNavOpen(false)} />
+          <SidebarPanel collapsed={false} onToggle={() => setMobileNavOpen(false)} onNavigate={() => setMobileNavOpen(false)} />
         </SheetContent>
       </Sheet>
     </>

@@ -82,7 +82,7 @@ export function AnomaliesTable({ anomalies }: { anomalies: Anomaly[] }) {
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelected(row.original)}>
+              <TableRow key={row.id} className="cursor-pointer" onClick={(e) => { if ((e.target as HTMLElement).closest('button')) return; setSelected(row.original); }}>
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id} className="whitespace-nowrap">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                 ))}
@@ -98,32 +98,30 @@ export function AnomaliesTable({ anomalies }: { anomalies: Anomaly[] }) {
           <Button variant="secondary" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Next</Button>
         </div>
       </div>
-      <Sheet open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent>
-          {selected && (
-            <>
-              <SheetHeader>
-                <div className="section-title">Anomaly detail</div>
-                <SheetTitle>{selected.canonical_label}</SheetTitle>
-              </SheetHeader>
-              <div className="mt-6 grid gap-3 text-sm">
-                <Detail label="Statement" value={selected.statement} />
-                <Detail label="Old document value" value={money(selected.old_value)} />
-                <Detail label="New comparative value" value={money(selected.new_value)} />
-                <Detail label="Difference" value={money(selected.delta)} />
-                <Detail label="Difference %" value={percent(selected)} />
-                <Detail label="Confidence" value={Math.round((selected.confidence ?? 0) * 100) + '%'} />
-                <Detail label="Triggered rule" value={selected.note || 'Cross-year deterministic comparison'} />
-                <Detail label="Page" value="Evidence page pending PDF location" />
-              </div>
-              <Card className="mt-6 bg-slate-50 p-4">
-                <div className="section-title mb-2">AI explanation</div>
-                <p className="text-sm leading-6 text-slate-600">This row should be reviewed because the comparative value carried into the new annual statement does not reconcile with the prior-year closing value for the same canonical account.</p>
-              </Card>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      {selected && (
+        <Sheet open onOpenChange={(open) => !open && setSelected(null)}>
+          <SheetContent>
+            <SheetHeader>
+              <div className="section-title">Anomaly detail</div>
+              <SheetTitle>{selected.canonical_label}</SheetTitle>
+            </SheetHeader>
+            <div className="mt-6 grid gap-3 text-sm">
+              <Detail label="Statement" value={selected.statement} />
+              <Detail label="Old document value" value={money(selected.old_value)} />
+              <Detail label="New comparative value" value={money(selected.new_value)} />
+              <Detail label="Difference" value={money(selected.delta)} />
+              <Detail label="Difference %" value={percent(selected)} />
+              <Detail label="Confidence" value={Math.round((selected.confidence ?? 0) * 100) + '%'} />
+              <Detail label="Triggered rule" value={selected.note || 'Cross-year deterministic comparison'} />
+              <Detail label="Page" value="Evidence page pending PDF location" />
+            </div>
+            <Card className="mt-6 bg-slate-50 p-4">
+              <div className="section-title mb-2">AI explanation</div>
+              <p className="text-sm leading-6 text-slate-600">This row should be reviewed because the comparative value carried into the new annual statement does not reconcile with the prior-year closing value for the same canonical account.</p>
+            </Card>
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   );
 }
