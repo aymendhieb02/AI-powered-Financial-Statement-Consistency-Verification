@@ -9,22 +9,27 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.18",
+    "@radix-ui/react-select": "^2.3.2",
+    "@radix-ui/react-tabs": "^1.1.16",
     "@tanstack/react-table": "latest",
     "axios": "latest",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
     "react-router-dom": "latest",
-    "recharts": "latest"
+    "recharts": "latest",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.2",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
-    "autoprefixer": "latest",
-    "postcss": "latest",
-    "tailwindcss": "latest",
+    "autoprefixer": "^10.5.2",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^3.4.19",
     "typescript": "latest",
     "vite": "latest"
   }
