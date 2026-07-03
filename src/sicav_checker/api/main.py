@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sicav_checker.api.routes import documents, health, projects, reports, verification
+from sicav_checker.api.routes import documents, enterprise, health, projects, reports, verification
 
 app = FastAPI(title="FinVerify API", version="0.1.0")
 
@@ -20,3 +20,4 @@ app.include_router(projects.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(verification.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
+app.include_router(enterprise.router, prefix="/api")

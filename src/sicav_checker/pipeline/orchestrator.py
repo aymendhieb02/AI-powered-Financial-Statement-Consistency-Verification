@@ -5,7 +5,11 @@ from pathlib import Path
 
 from sicav_checker.config import Settings, settings
 from sicav_checker.core.logging import log_stage, logger
+from sicav_checker.confidence.confidence_engine import ConfidenceEngine
 from sicav_checker.domain.models import ComparisonReport, ComparisonResult, FinancialDocument, ValidationResult
+from sicav_checker.evidence.evidence_tracker import EvidenceTracker
+from sicav_checker.history.verification_history import VerificationHistoryService
+from sicav_checker.repositories.json_repositories import JsonEvidenceRepository
 from sicav_checker.services.comparison_service import ComparisonService
 from sicav_checker.services.extraction_service import ExtractionService
 from sicav_checker.services.normalization_service import NormalizationService
@@ -55,6 +59,10 @@ class PipelineOrchestrator:
             extracted_dir=app_settings.resolve(app_settings.extracted_json_dir),
             backend=app_settings.storage_backend,
         )
+        self.confidence_engine = ConfidenceEngine()
+        self.evidence_tracker = EvidenceTracker()
+        self.history_service = VerificationHistoryService()
+        self.evidence_repository = JsonEvidenceRepository()
 
     def extract(self, raw_dir: Path) -> list[FinancialDocument]:
         with log_stage("pipeline_extract", raw_dir=str(raw_dir)):
@@ -78,14 +86,26 @@ class PipelineOrchestrator:
     def report(self, reports_dir: Path | None = None) -> PipelineResult:
         with log_stage("pipeline_report"):
             documents, comparisons, validations, missing_years = self.compare()
+            evidence = self.evidence_tracker.collect(documents)
+            for item in evidence:
+                self.evidence_repository.save_evidence(item)
+            confidence = self.confidence_engine.aggregate(documents, comparisons, validations)
             comparison_report = ComparisonReport(
                 documents=documents,
                 comparisons=comparisons,
                 validations=validations,
                 missing_years=missing_years,
+                evidence=evidence,
+                confidence=confidence,
             )
             output_dir = reports_dir or self.settings.resolve(self.settings.reports_dir)
+            run = self.history_service.create_run("default", documents, comparisons, validations, [])
+            comparison_report.verification_history = self.history_service.list_runs("default")
             report_paths = self.reporting_service.generate(comparison_report, output_dir)
+            run.report_paths = [str(path) for path in report_paths]
+            self.history_service.repository.save_run(run)
+            comparison_report.verification_history = self.history_service.list_runs("default")
+            logger.info("Verification run recorded run_id={} confidence={:.2f}", run.run_id, confidence.overall)
             return PipelineResult(documents, comparisons, validations, missing_years, report_paths)
 
     def run_all(self, raw_dir: Path, reports_dir: Path | None = None) -> PipelineResult:

@@ -45,6 +45,27 @@ class DocumentMetadata(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+class Evidence(BaseModel):
+    line_id: str = ""
+    source_pdf: str = ""
+    page: int | None = None
+    bounding_box: tuple[float, float, float, float] | None = None
+    table_id: str | None = None
+    row_number: int | None = None
+    column: str | None = None
+    extraction_method: str = "unknown"
+    raw_text: str = ""
+    normalized_value: float | int | None = None
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class MatchMetadata(BaseModel):
+    original_label: str = ""
+    canonical_label: str = ""
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    method: str = "unknown"
+
+
 class FinancialLine(BaseModel):
     label: str
     canonical_label: str
@@ -53,6 +74,8 @@ class FinancialLine(BaseModel):
     page: int | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     notes: str = ""
+    evidence: Evidence | None = None
+    match: MatchMetadata | None = None
 
 
 class StatementSection(BaseModel):
@@ -182,6 +205,47 @@ class ComparisonResult(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     note: str = ""
     anomaly: Anomaly | None = None
+    old_evidence: Evidence | None = None
+    new_evidence: Evidence | None = None
+    matching_method: str = "unknown"
+
+
+class RuleResult(BaseModel):
+    rule_id: str
+    rule_name: str
+    status: Status
+    severity: Severity
+    expected: float | int | str | None = None
+    actual: float | int | str | None = None
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    execution_time: float = 0.0
+    page: int | None = None
+    statement: str = ""
+    message: str = ""
+
+
+class ConfidenceReport(BaseModel):
+    extraction: float = Field(default=1.0, ge=0.0, le=1.0)
+    normalization: float = Field(default=1.0, ge=0.0, le=1.0)
+    comparison: float = Field(default=1.0, ge=0.0, le=1.0)
+    rules: float = Field(default=1.0, ge=0.0, le=1.0)
+    overall: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class VerificationRun(BaseModel):
+    run_id: str
+    timestamp: str
+    project: str = "default"
+    documents: list[str] = Field(default_factory=list)
+    versions: dict[str, str] = Field(default_factory=dict)
+    settings: dict[str, Any] = Field(default_factory=dict)
+    results: dict[str, Any] = Field(default_factory=dict)
+    report_paths: list[str] = Field(default_factory=list)
+    confidence: ConfidenceReport | None = None
+    new_anomalies: list[str] = Field(default_factory=list)
+    resolved_anomalies: list[str] = Field(default_factory=list)
+    changed_risk_score: float | None = None
+    changed_confidence: float | None = None
 
 
 class ValidationResult(BaseModel):
@@ -195,6 +259,11 @@ class ValidationResult(BaseModel):
     delta: float | None = None
     note: str = ""
     anomaly: Anomaly | None = None
+    rule_id: str | None = None
+    rule_name: str | None = None
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    execution_time: float = 0.0
+    page: int | None = None
 
 
 
@@ -210,6 +279,10 @@ class ComparisonReport(BaseModel):
     comparisons: list[ComparisonResult] = Field(default_factory=list)
     validations: list[ValidationResult] = Field(default_factory=list)
     missing_years: list[int] = Field(default_factory=list)
+    rule_results: list[RuleResult] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    confidence: ConfidenceReport | None = None
+    verification_history: list[VerificationRun] = Field(default_factory=list)
 
     @property
     def anomalies(self) -> list[Anomaly]:

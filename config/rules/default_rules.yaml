@@ -1,0 +1,19 @@
+﻿rules:
+  - id: BS001
+    name: Total Assets Equality
+    category: Balance Sheet
+    severity: CRITICAL
+    statement: bilan
+    expression: total_actif == total_passif_et_actif_net
+    message: Total Assets must equal Total Liabilities and Net Assets.
+  - id: BS002
+    name: Assets Equal Liabilities Plus Net Assets
+    category: Balance Sheet
+    severity: CRITICAL
+    statement: bilan
+    expression: total_actif == total_passif + actif_net
+    message: Total Assets must equal Total Liabilities plus Net Assets.
+mandatory_fields:
+  - total_actif
+  - total_passif_et_actif_net
+  - actif_net

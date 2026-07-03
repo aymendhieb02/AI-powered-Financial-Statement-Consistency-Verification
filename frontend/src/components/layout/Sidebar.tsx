@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { AlertTriangle, BarChart3, FileText, FolderKanban, Settings, UploadCloud } from 'lucide-react';
+import { AlertTriangle, BarChart3, BookOpen, FileText, FolderKanban, History, Search, Settings, ShieldCheck, UploadCloud } from 'lucide-react';
 
 const items = [
   { to: '/', label: 'Dashboard', icon: BarChart3 },
@@ -8,6 +8,10 @@ const items = [
   { to: '/verification', label: 'Verification', icon: FileText },
   { to: '/anomalies', label: 'Anomalies', icon: AlertTriangle },
   { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/rules', label: 'Rules', icon: BookOpen },
+  { to: '/history', label: 'History', icon: History },
+  { to: '/evidence', label: 'Evidence', icon: Search },
+  { to: '/confidence', label: 'Confidence', icon: ShieldCheck },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 

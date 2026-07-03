@@ -1,0 +1,25 @@
+﻿concepts:
+  - canonical_name: total_actif
+    aliases:
+      - TOTAL ACTIF
+      - Total Actif
+      - Actif Total
+      - Total des actifs
+  - canonical_name: total_passif
+    aliases:
+      - TOTAL PASSIF
+      - Total Passif
+  - canonical_name: actif_net
+    aliases:
+      - ACTIF NET
+      - Actif Net
+      - Net Assets
+  - canonical_name: total_passif_et_actif_net
+    aliases:
+      - TOTAL PASSIF ET ACTIF NET
+      - Total Passif et Actif Net
+      - Total passif et actifs nets
+  - canonical_name: resultat_exercice
+    aliases:
+      - RESULTAT DE L EXERCICE
+      - Resultat de l'exercice

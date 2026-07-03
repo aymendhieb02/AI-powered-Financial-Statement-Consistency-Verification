@@ -64,6 +64,9 @@ def compare_documents(old_doc: ExtractedDocument, new_doc: ExtractedDocument, to
                     delta=delta,
                     confidence=min(old_row.confidence, new_row.confidence if new_row else 1.0),
                     note=note,
+                    old_evidence=old_row.evidence,
+                    new_evidence=new_row.evidence if new_row else None,
+                    matching_method=new_row.match.method if new_row and new_row.match else ("fuzzy" if renamed else "exact"),
                 )
             )
 

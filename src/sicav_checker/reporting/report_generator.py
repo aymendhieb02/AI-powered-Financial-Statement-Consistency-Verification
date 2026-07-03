@@ -1,11 +1,12 @@
 ﻿from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.reporting.excel_report import write_excel_report
-from sicav_checker.reporting.json_report import write_json_report
 
 
 class ReportGenerator(ABC):
@@ -17,16 +18,120 @@ class ReportGenerator(ABC):
 
 
 class ExcelGenerator(ReportGenerator):
+    """Generate an accountant-facing Excel workbook from a ComparisonReport."""
+
     def __init__(self, filename: str = "maxula_consistency_report.xlsx") -> None:
         self.filename = filename
 
     def generate(self, report: ComparisonReport, output_dir: Path) -> Path:
-        return write_excel_report(output_dir / self.filename, report.documents, report.comparisons, report.validations, report.missing_years)
+        output = output_dir / self.filename
+        output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            import pandas as pd
+        except ImportError:
+            return write_excel_report(output, report.documents, report.comparisons, report.validations, report.missing_years)
+
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            for sheet, rows in _report_tables(report).items():
+                pd.DataFrame(rows).to_excel(writer, sheet_name=sheet[:31], index=False)
+            workbook = writer.book
+            ok = workbook.add_format({"bg_color": "#C6EFCE", "font_color": "#006100"})
+            bad = workbook.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006"})
+            warn = workbook.add_format({"bg_color": "#FFEB9C", "font_color": "#9C6500"})
+            for worksheet in writer.sheets.values():
+                worksheet.freeze_panes(1, 0)
+                worksheet.set_column(0, 30, 20)
+                worksheet.conditional_format("A1:AZ5000", {"type": "text", "criteria": "containing", "value": "OK", "format": ok})
+                worksheet.conditional_format("A1:AZ5000", {"type": "text", "criteria": "containing", "value": "MISMATCH", "format": bad})
+                worksheet.conditional_format("A1:AZ5000", {"type": "text", "criteria": "containing", "value": "MISSING", "format": bad})
+                worksheet.conditional_format("A1:AZ5000", {"type": "text", "criteria": "containing", "value": "LOW", "format": warn})
+        return output
 
 
 class JsonGenerator(ReportGenerator):
+    """Generate a machine-readable JSON report from a ComparisonReport."""
+
     def __init__(self, filename: str = "maxula_consistency_report.json") -> None:
         self.filename = filename
 
     def generate(self, report: ComparisonReport, output_dir: Path) -> Path:
-        return write_json_report(output_dir / self.filename, report.documents, report.comparisons, report.validations, report.missing_years)
+        output = output_dir / self.filename
+        output.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "summary": _summary(report),
+            "documents": [_dump(item) for item in report.documents],
+            "cross_year_checks": [_dump(item) for item in report.comparisons],
+            "internal_validation": [_dump(item) for item in report.validations],
+            "rule_results": [_dump(item) for item in report.rule_results],
+            "evidence": [_dump(item) for item in report.evidence],
+            "confidence": _dump(report.confidence) if report.confidence else None,
+            "verification_history": [_dump(item) for item in report.verification_history],
+            "missing_years": report.missing_years,
+        }
+        output.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return output
+
+
+def _report_tables(report: ComparisonReport) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "Summary": _summary_rows(report),
+        "Cross-Year Checks": [_dump(item) for item in report.comparisons],
+        "Internal Validation": [_dump(item) for item in report.validations],
+        "Rule Results": [_dump(item) for item in report.rule_results or _validation_rule_rows(report)],
+        "Extraction Quality": [_document_quality(item) for item in report.documents],
+        "Missing Years": [{"missing_year": year} for year in report.missing_years],
+        "Confidence Summary": [_dump(report.confidence)] if report.confidence else [],
+        "Evidence Trace": [_dump(item) for item in report.evidence],
+        "Verification History": [_dump(item) for item in report.verification_history],
+        "Matching Summary": [_matching_row(item) for item in report.comparisons],
+    }
+
+
+def _summary(report: ComparisonReport) -> dict[str, Any]:
+    return {
+        "documents": len(report.documents),
+        "cross_year_checks": len(report.comparisons),
+        "internal_validation_checks": len(report.validations),
+        "rule_checks": len(report.rule_results) or sum(1 for item in report.validations if item.rule_id),
+        "anomalies": sum(1 for item in [*report.comparisons, *report.validations] if item.status != "OK"),
+        "missing_years": report.missing_years,
+        "confidence": report.confidence.overall if report.confidence else None,
+    }
+
+
+def _summary_rows(report: ComparisonReport) -> list[dict[str, Any]]:
+    return [{"Metric": key, "Value": value} for key, value in _summary(report).items()]
+
+
+def _document_quality(document: Any) -> dict[str, Any]:
+    return {
+        "document_year": document.document_year,
+        "source_file": document.source_file,
+        "extraction_method": document.extraction_method,
+        "confidence": document.confidence,
+        "statements": ", ".join(document.statements),
+    }
+
+
+def _validation_rule_rows(report: ComparisonReport) -> list[dict[str, Any]]:
+    return [_dump(item) for item in report.validations if item.rule_id]
+
+
+def _matching_row(result: Any) -> dict[str, Any]:
+    return {
+        "pair": result.pair,
+        "year": result.year,
+        "statement": result.statement,
+        "old_label": result.old_label,
+        "new_label": result.new_label,
+        "canonical_label": result.canonical_label,
+        "matching_method": result.matching_method,
+        "confidence": result.confidence,
+        "status": result.status,
+    }
+
+
+def _dump(model: Any) -> dict[str, Any]:
+    if model is None:
+        return {}
+    return model.model_dump(mode="json") if hasattr(model, "model_dump") else dict(model)

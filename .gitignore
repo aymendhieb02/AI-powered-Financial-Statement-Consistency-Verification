@@ -19,3 +19,7 @@ frontend/node_modules/
 frontend/dist/
 data/projects/
 frontend/tsconfig.tsbuildinfo
+
+data/verification_history/*.json
+data/evidence/*.json
+package-lock.json
