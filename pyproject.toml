@@ -3,15 +3,16 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sicav-checker"
+name = "finverify"
 version = "0.1.0"
-description = "Local SICAV financial statement consistency checker."
+description = "FinVerify local SICAV financial statement consistency checker."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
-sicav-checker = "sicav_checker.cli:app"
+finverify = "sicav_checker.cli:main"
+sicav-checker = "sicav_checker.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,8 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from io import BytesIO
 
-from loguru import logger
+try:
+    from loguru import logger
+except ImportError:
+    class _Logger:
+        def warning(self, message: str, *args: object) -> None:
+            print("WARNING: " + message.format(*args))
+    logger = _Logger()
 
 from sicav_checker.config import settings
 from sicav_checker.storage.local_storage import LocalStorageAdapter

@@ -17,3 +17,4 @@ pytest
 minio
 opencv-python
 camelot-py
+pydantic-settings

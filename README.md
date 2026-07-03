@@ -80,3 +80,11 @@ PDF table extraction can be imperfect when source scans are low quality. OCR, Ca
 - Add OCR for scanned PDFs.
 - Add review UI for correcting extracted rows.
 - Persist historical audit decisions.
+
+## Architecture Refactor
+
+FinVerify is now centered on a canonical FinancialDocument domain model. Extraction creates this object, and validation, comparison, reporting, storage, and AI services consume it instead of raw dictionaries.
+
+The CLI is only a client. Business workflow lives in PipelineOrchestrator, and reusable application services live in src/sicav_checker/services. This keeps the modular monolith simple today while allowing a future FastAPI, Streamlit, or desktop UI to reuse the same service layer.
+
+See docs/ARCHITECTURE.md for the architectural decisions and extension points.
