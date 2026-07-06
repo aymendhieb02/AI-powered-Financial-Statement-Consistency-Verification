@@ -14,6 +14,14 @@ class Status(str, Enum):
     MISSING_IN_NEW = "MISSING_IN_NEW"
     LABEL_RENAMED = "LABEL_RENAMED"
     LOW_CONFIDENCE_EXTRACTION = "LOW_CONFIDENCE_EXTRACTION"
+    CARRY_FORWARD_OK = "carry_forward_ok"
+    CARRY_FORWARD_MISMATCH = "carry_forward_mismatch"
+    MISSING_IN_NEW_COMPARATIVE = "missing_in_new_comparative"
+    MISSING_IN_OLD_CURRENT = "missing_in_old_current"
+    ADDED_ACCOUNT = "added_account"
+    REMOVED_ACCOUNT = "removed_account"
+    DUPLICATE_LABEL = "duplicate_label"
+    PARSE_LOW_CONFIDENCE = "parse_low_confidence"
 
 
 class Severity(str, Enum):

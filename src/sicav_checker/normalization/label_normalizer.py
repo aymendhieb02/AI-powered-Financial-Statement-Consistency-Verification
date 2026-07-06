@@ -26,6 +26,16 @@ ALIASES = {
     "perte_nette": "resultat_net",
     "etat_variation_actif_net": "variation_actif_net",
     "nombre_titres": "nombre_actions",
+    "total_actif": "total_actif",
+    "total_actifs": "total_actif",
+    "total_actif": "total_actif",
+    "total_des_actifs": "total_actif",
+    "total_passif_actif_net": "total_passif_actif_net",
+    "total_passif_et_actif_net": "total_passif_actif_net",
+    "revenus_des_prises_en_pensions": "revenus_prises_pension",
+    "revenus_prises_en_pensions": "revenus_prises_pension",
+    "revenus_prises_en_pension": "revenus_prises_pension",
+    "sommes_distribuables_exercice": "sommes_distribuables_exercice",
 }
 
 

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from sicav_checker.comparison.coverage import comparison_coverage
+from sicav_checker.comparison.coverage import comparison_coverage, is_anomaly_status
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.reporting.excel_report import write_excel_report
 
@@ -94,7 +94,7 @@ def _summary(report: ComparisonReport) -> dict[str, Any]:
         "cross_year_checks": len(report.comparisons),
         "internal_validation_checks": len(report.validations),
         "rule_checks": len(report.rule_results) or sum(1 for item in report.validations if item.rule_id),
-        "anomalies": sum(1 for item in [*report.comparisons, *report.validations] if item.status != "OK"),
+        "anomalies": sum(1 for item in [*report.comparisons, *report.validations] if is_anomaly_status(item.status)),
         "missing_years": report.missing_years,
         "confidence": report.confidence.overall if report.confidence else None,
         **_coverage(report),

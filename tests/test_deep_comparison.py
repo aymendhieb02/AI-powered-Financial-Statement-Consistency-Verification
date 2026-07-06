@@ -48,7 +48,7 @@ def test_deep_comparison_compares_all_80_statement_lines() -> None:
     results = compare_documents(old, new)
 
     assert len(results) == 80
-    assert sum(1 for item in results if item.status == Status.OK) == 80
+    assert sum(1 for item in results if item.status == Status.CARRY_FORWARD_OK) == 80
     assert comparison_coverage(old, new, results)["comparable_lines"] == 80
 
 
@@ -61,8 +61,8 @@ def test_deep_comparison_detects_mismatches_and_missing_lines() -> None:
     results = compare_documents(old, new)
 
     assert len(results) == 80
-    assert sum(1 for item in results if item.status == Status.MISMATCH) == 1
-    assert sum(1 for item in results if item.status == Status.MISSING_IN_NEW) == 1
+    assert sum(1 for item in results if item.status == Status.CARRY_FORWARD_MISMATCH) == 1
+    assert sum(1 for item in results if item.status == Status.MISSING_IN_NEW_COMPARATIVE) == 1
 
 
 def test_renamed_labels_can_still_match() -> None:

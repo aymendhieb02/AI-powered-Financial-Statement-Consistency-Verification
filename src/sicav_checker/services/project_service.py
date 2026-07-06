@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from sicav_checker.comparison.coverage import comparison_coverage
+from sicav_checker.comparison.coverage import MISMATCH_STATUSES, MISSING_NEW_STATUSES, MISSING_OLD_STATUSES, is_anomaly_status, is_ok_status, comparison_coverage
 from sicav_checker.config import Settings, settings
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.exceptions import StorageError
@@ -211,12 +211,12 @@ class ProjectService:
     def _run_from_pipeline(self, project_id: str, result: PipelineResult) -> VerificationRunRecord:
         comparisons = result.comparisons
         validations = result.validations
-        non_ok = [item for item in comparisons if item.status != "OK"]
+        non_ok = [item for item in comparisons if is_anomaly_status(item.status)]
         critical = sum(1 for item in non_ok if item.severity == "CRITICAL")
         medium = sum(1 for item in non_ok if item.severity == "MEDIUM")
         low = sum(1 for item in non_ok if item.severity == "LOW")
         risk_score = min(100, critical * 25 + medium * 10 + low * 3)
-        missing = sum(1 for item in comparisons if "MISSING" in str(item.status))
+        missing = sum(1 for item in comparisons if item.status in MISSING_NEW_STATUSES or item.status in MISSING_OLD_STATUSES)
         years = [doc.document_year for doc in result.documents if doc.document_year is not None]
         old_year = min(years) if years else None
         new_year = max(years) if years else None
@@ -232,8 +232,8 @@ class ProjectService:
             "documents_analyzed": len(result.documents),
             "pairs_checked": len({item.pair for item in comparisons}),
             "values_checked": len(comparisons),
-            "ok_count": sum(1 for item in comparisons if item.status == "OK"),
-            "mismatch_count": sum(1 for item in comparisons if item.status == "MISMATCH"),
+            "ok_count": sum(1 for item in comparisons if is_ok_status(item.status)),
+            "mismatch_count": sum(1 for item in comparisons if item.status in MISMATCH_STATUSES),
             "missing_count": missing,
             "critical_anomalies": critical,
             "medium_anomalies": medium,

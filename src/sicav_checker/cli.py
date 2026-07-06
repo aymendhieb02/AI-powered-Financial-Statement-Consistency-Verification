@@ -17,7 +17,7 @@ except ImportError:
     Console = None
     Table = None
 
-from sicav_checker.comparison.coverage import comparison_coverage, count_financial_lines
+from sicav_checker.comparison.coverage import MISMATCH_STATUSES, MISSING_NEW_STATUSES, MISSING_OLD_STATUSES, comparison_coverage, count_financial_lines
 from sicav_checker.comparison.cross_year_comparator import compare_documents
 from sicav_checker.config import settings
 from sicav_checker.domain.models import ComparisonResult, FinancialDocument, ValidationResult
@@ -116,8 +116,8 @@ def debug_comparison_command(old_pdf: Path, new_pdf: Path) -> None:
     new_doc = _extract_one(new_pdf)
     comparisons = compare_documents(old_doc, new_doc, tolerance=settings.comparison_tolerance)
     coverage = comparison_coverage(old_doc, new_doc, comparisons)
-    missing = [item for item in comparisons if "MISSING" in str(item.status)]
-    mismatched = [item for item in comparisons if item.status == "MISMATCH"]
+    missing = [item for item in comparisons if item.status in MISSING_NEW_STATUSES or item.status in MISSING_OLD_STATUSES]
+    mismatched = [item for item in comparisons if item.status in MISMATCH_STATUSES]
     console.print(f"Target compared year: {old_doc.document_year}")
     console.print(f"Old lines count: {count_financial_lines(old_doc)}")
     console.print(f"New lines count: {count_financial_lines(new_doc)}")
