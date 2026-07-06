@@ -6,26 +6,26 @@ type Props = {
   projectId?: string | null;
   runId?: string | null;
   compact?: boolean;
+  reportsAvailable?: boolean;
 };
 
-export function ReportActions({ projectId, runId, compact }: Props) {
-  const disabled = !projectId || !runId;
-  const hint = 'No report generated yet. Run verification first.';
+export function ReportActions({ projectId, runId, compact, reportsAvailable }: Props) {
+  const enabled = Boolean(projectId && runId && runId !== 'latest' && reportsAvailable !== false);
 
-  if (disabled) {
+  if (!enabled) {
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap gap-3">
-          <Button disabled><FileSpreadsheet size={15} /> Excel report</Button>
-          <Button variant="secondary" disabled><FileJson size={15} /> JSON report</Button>
+          <Button disabled><FileSpreadsheet size={15} /> Excel Audit Report</Button>
+          <Button variant="secondary" disabled><FileJson size={15} /> JSON Report</Button>
         </div>
-        <p className="text-sm text-slate-500">{hint}</p>
+        <p className="text-sm text-slate-500">Run a comparison first.</p>
       </div>
     );
   }
 
-  const excelHref = excelReportUrl(projectId, runId);
-  const jsonHref = jsonReportUrl(projectId, runId);
+  const excelHref = excelReportUrl(projectId as string, runId as string);
+  const jsonHref = jsonReportUrl(projectId as string, runId as string);
 
   if (compact) {
     return (
@@ -38,7 +38,7 @@ export function ReportActions({ projectId, runId, compact }: Props) {
 
   return (
     <div className="flex flex-wrap gap-3">
-      <Button asChild><a href={excelHref} download><Download size={16} /> Download Excel Report</a></Button>
+      <Button asChild><a href={excelHref} download><Download size={16} /> Download Excel Audit Report</a></Button>
       <Button variant="secondary" asChild><a href={jsonHref} download><Download size={16} /> Download JSON Report</a></Button>
     </div>
   );
