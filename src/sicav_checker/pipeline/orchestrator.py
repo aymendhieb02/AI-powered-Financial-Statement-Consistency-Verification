@@ -6,6 +6,7 @@ from pathlib import Path
 from sicav_checker.config import Settings, settings
 from sicav_checker.core.logging import log_stage, logger
 from sicav_checker.confidence.confidence_engine import ConfidenceEngine
+from sicav_checker.exceptions import ComparisonError
 from sicav_checker.domain.models import ComparisonReport, ComparisonResult, FinancialDocument, ValidationResult
 from sicav_checker.evidence.evidence_tracker import EvidenceTracker
 from sicav_checker.history.verification_history import VerificationHistoryService
@@ -112,6 +113,51 @@ class PipelineOrchestrator:
         with log_stage("pipeline_all", raw_dir=str(raw_dir)):
             self.extract(raw_dir)
             return self.report(reports_dir=reports_dir)
+
+    def run_pair(
+        self,
+        raw_dir: Path,
+        old_filename: str,
+        new_filename: str,
+        reports_dir: Path | None = None,
+    ) -> PipelineResult:
+        with log_stage("pipeline_pair", old_file=old_filename, new_file=new_filename):
+            documents = self.extract(raw_dir)
+            old_doc = self._document_by_filename(documents, old_filename)
+            new_doc = self._document_by_filename(documents, new_filename)
+            if old_doc is None or new_doc is None:
+                raise ComparisonError(f"Could not match extracted documents for {old_filename} and {new_filename}")
+            validations = self.validation_service.validate_documents(documents)
+            comparisons = self.comparison_service.compare_pair(old_doc, new_doc)
+            missing_years = self._missing_years([document.document_year for document in documents if document.document_year is not None])
+            evidence = self.evidence_tracker.collect(documents)
+            for item in evidence:
+                self.evidence_repository.save_evidence(item)
+            confidence = self.confidence_engine.aggregate(documents, comparisons, validations)
+            comparison_report = ComparisonReport(
+                documents=documents,
+                comparisons=comparisons,
+                validations=validations,
+                missing_years=missing_years,
+                evidence=evidence,
+                confidence=confidence,
+            )
+            output_dir = reports_dir or self.settings.resolve(self.settings.reports_dir)
+            run = self.history_service.create_run("default", documents, comparisons, validations, [])
+            comparison_report.verification_history = self.history_service.list_runs("default")
+            report_paths = self.reporting_service.generate(comparison_report, output_dir)
+            run.report_paths = [str(path) for path in report_paths]
+            self.history_service.repository.save_run(run)
+            return PipelineResult(documents, comparisons, validations, missing_years, report_paths)
+
+    @staticmethod
+    def _document_by_filename(documents: list[FinancialDocument], filename: str) -> FinancialDocument | None:
+        target = Path(filename).name
+        for document in documents:
+            source = Path(document.source_file).name if document.source_file else ""
+            if source == target or target in document.source_file:
+                return document
+        return None
 
     @staticmethod
     def _missing_years(years: list[int]) -> list[int]:

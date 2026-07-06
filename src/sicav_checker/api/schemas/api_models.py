@@ -24,6 +24,27 @@ class ProjectResponse(BaseModel):
     created_at: str
 
 
+class ProjectDetailResponse(ProjectResponse):
+    document_count: int = 0
+    latest_run_id: str | None = None
+    latest_run_status: str | None = None
+    latest_risk_score: float | None = None
+    latest_confidence: float | None = None
+    updated_at: str | None = None
+
+
+class VerificationRunRequest(BaseModel):
+    old_document_id: str | None = None
+    new_document_id: str | None = None
+
+
+class VerificationRunListItem(BaseModel):
+    run_id: str
+    status: str
+    created_at: str
+    summary: dict = Field(default_factory=dict)
+
+
 class UploadedDocument(BaseModel):
     filename: str
     size: int
@@ -45,6 +66,11 @@ class VerificationRunResponse(BaseModel):
 class VerificationSummary(BaseModel):
     run_id: str
     status: str
+    company: str = ""
+    old_document_year: int | None = None
+    new_document_year: int | None = None
+    compared_year: int | None = None
+    overall_confidence: float = 0
     documents_analyzed: int = 0
     pairs_checked: int = 0
     values_checked: int = 0

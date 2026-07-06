@@ -113,3 +113,22 @@ npm run dev
 Frontend API configuration lives in frontend/.env.example with VITE_API_BASE_URL=http://localhost:8000/api.
 
 The accountant workflow is: Create Project, Upload PDFs, Run Verification, Review Summary, Review Anomalies, Download Report.
+
+## Manual QA Script
+
+1. Start backend:
+   `uvicorn sicav_checker.api.main:app --reload`
+2. Start frontend:
+   `cd frontend && npm run dev`
+3. Open `http://localhost:5173`
+4. Create project: `MAXULA annual verification`
+5. Upload two PDFs (e.g. 2024 and 2025 annual reports)
+6. On Verification, select old document = 2024 PDF and new document = 2025 PDF
+7. Click **Run Comparison**
+8. Verify results summary appears (documents, pairs, anomalies, risk score)
+9. Open **Anomalies** and click **View** on a row
+10. Verify the detail drawer opens without crashing
+11. Open **Reports**
+12. Download Excel and JSON (enabled only after a successful run)
+
+See `frontend/INTEGRATION_AUDIT.md` for the UI action checklist and integration status.

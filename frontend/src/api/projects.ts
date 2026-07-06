@@ -1,8 +1,13 @@
 import { api } from './client';
-import type { Project } from '../types/api';
+import type { Project, ProjectDetail } from '../types/api';
 
 export async function listProjects() {
   const { data } = await api.get<Project[]>('/projects');
+  return data;
+}
+
+export async function getProject(projectId: string) {
+  const { data } = await api.get<ProjectDetail>(`/projects/${projectId}`);
   return data;
 }
 

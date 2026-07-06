@@ -1,55 +1,63 @@
 import { useEffect, useState } from 'react';
-import { GitCompareArrows, History } from 'lucide-react';
-import { listHistory } from '../api/enterprise';
-import { PageHeader } from '../components/ui/Cards';
-import { Badge, StatusBadge } from '../components/ui/Badge';
-import { Button } from '../components/ui/button';
+import { useParams } from 'react-router-dom';
+import { History } from 'lucide-react';
+import { getApiErrorMessage } from '../api/client';
+import { listProjectRuns } from '../api/verification';
+import type { VerificationRunListItem } from '../types/api';
+import { StatusBadge } from '../components/ui/Badge';
 import { Card } from '../components/ui/card';
 
-type Run = { run_id: string; timestamp: string; documents?: string[]; confidence?: { overall?: number }; results?: { risk_score?: number; comparisons?: number; validations?: number }; new_anomalies?: string[]; resolved_anomalies?: string[] };
-
 export function VerificationHistoryPage() {
-  const [runs, setRuns] = useState<Run[]>([]);
-  useEffect(() => { listHistory().then((data) => setRuns(Array.isArray(data) ? data : data.runs || [])).catch(() => undefined); }, []);
-  const visible = runs.length ? runs : [{ run_id: 'run-2024-06', timestamp: new Date().toISOString(), documents: ['MAXULA_2024.pdf'], confidence: { overall: 0.984 }, results: { risk_score: 18, comparisons: 642, validations: 18 }, new_anomalies: ['actif_net'], resolved_anomalies: [] }];
+  const { projectId: routeProjectId } = useParams();
+  const [runs, setRuns] = useState<VerificationRunListItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!routeProjectId) {
+      setLoading(false);
+      return;
+    }
+    listProjectRuns(routeProjectId)
+      .then(setRuns)
+      .catch((err) => setError(getApiErrorMessage(err, 'Failed to load verification history')))
+      .finally(() => setLoading(false));
+  }, [routeProjectId]);
+
+  if (!routeProjectId) {
+    return <Card className="p-4 text-sm text-slate-500">Select a project to view verification history.</Card>;
+  }
+
   return (
-    <section className="space-y-6">
-      <PageHeader
-        eyebrow="Audit trail"
-        title="Verification history"
-        description="Immutable run timeline with confidence changes, risk score movement, new anomalies, resolved anomalies, and report lineage."
-        actions={<Button variant="secondary"><GitCompareArrows size={15} /> Compare runs</Button>}
-      />
-      <div className="space-y-3">
-        {visible.map((run) => (
+    <div className="space-y-4">
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {loading ? (
+        <Card className="p-6 text-sm text-slate-500">Loading verification history...</Card>
+      ) : runs.length === 0 ? (
+        <Card className="p-6 text-sm text-slate-500">No verification runs recorded for this project yet.</Card>
+      ) : (
+        runs.map((run) => (
           <Card key={run.run_id} className="p-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex gap-3">
                 <div className="rounded-md bg-slate-100 p-2 text-slate-600"><History size={17} /></div>
                 <div>
                   <div className="font-mono text-sm font-semibold text-slate-950">{run.run_id}</div>
-                  <div className="mt-1 text-xs text-slate-500">{new Date(run.timestamp).toLocaleString()} - {run.documents?.length || 0} documents</div>
+                  <div className="mt-1 text-xs text-slate-500">{new Date(run.created_at).toLocaleString()}</div>
                 </div>
               </div>
-              <StatusBadge status="completed" />
+              <StatusBadge status={run.status} />
             </div>
-            <div className="mt-4 grid gap-3 text-sm md:grid-cols-5">
-              <Metric label="Rules" value={run.results?.validations ?? 0} />
-              <Metric label="Comparisons" value={run.results?.comparisons ?? 0} />
-              <Metric label="Confidence" value={Math.round((run.confidence?.overall ?? 1) * 100) + '%'} />
-              <Metric label="Risk score" value={run.results?.risk_score ?? 0} />
-              <div>
-                <div className="text-slate-500">Changes</div>
-                <div className="mt-1 flex gap-2">
-                  <Badge tone="warning">+{run.new_anomalies?.length || 0}</Badge>
-                  <Badge tone="success">-{run.resolved_anomalies?.length || 0}</Badge>
-                </div>
-              </div>
+            <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
+              <Metric label="Values compared" value={run.summary.values_checked ?? 0} />
+              <Metric label="Critical" value={run.summary.critical_anomalies ?? 0} />
+              <Metric label="Risk score" value={run.summary.risk_score ?? 0} />
+              <Metric label="Status" value={run.status} />
             </div>
           </Card>
-        ))}
-      </div>
-    </section>
+        ))
+      )}
+    </div>
   );
 }
 

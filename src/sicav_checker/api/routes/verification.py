@@ -3,15 +3,20 @@
 from fastapi import APIRouter, Depends, Query
 
 from sicav_checker.api.dependencies import get_project_service
-from sicav_checker.api.schemas.api_models import PaginatedAnomalies, VerificationRunResponse, VerificationSummary
+from sicav_checker.api.schemas.api_models import PaginatedAnomalies, VerificationRunRequest, VerificationRunResponse, VerificationSummary
 from sicav_checker.services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects/{project_id}/verification", tags=["verification"])
 
 
 @router.post("/run", response_model=VerificationRunResponse)
-def run_verification(project_id: str, service: ProjectService = Depends(get_project_service)) -> VerificationRunResponse:
-    run = service.run_verification(project_id)
+def run_verification(
+    project_id: str,
+    payload: VerificationRunRequest | None = None,
+    service: ProjectService = Depends(get_project_service),
+) -> VerificationRunResponse:
+    request = payload or VerificationRunRequest()
+    run = service.run_verification(project_id, request.old_document_id, request.new_document_id)
     return VerificationRunResponse(run_id=run.id, status=run.status)
 
 
