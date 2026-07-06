@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from sicav_checker.core.logging import logger
@@ -14,6 +15,34 @@ from sicav_checker.normalization.year_detector import detect_document_year
 
 
 COMPARABLE_STATEMENTS = ("bilan", "etat_resultat", "etat_variation_actif_net")
+PROTECTED_NOTE_LABELS = {
+    "total_actif",
+    "total_passif",
+    "actif_net",
+    "total_passif_actif_net",
+    "total_passif_et_actif_net",
+    "valeur_liquidative",
+    "taux_rendement",
+}
+PURE_SECTION_LABELS = {
+    "actif",
+    "passif",
+    "capitaux_propres",
+    "etat_resultat",
+    "etat_variation_actif_net",
+    "montants_exprimes_en_dinars_tunisiens",
+    "note_annee_2025_annee_2024",
+    "note_annee_2024_annee_2023",
+}
+CATEGORY_PREFIXES = ("PASSIF ", "ACTIF NET ", "ACTIF ")
+
+
+@dataclass(frozen=True)
+class ParsedCandidate:
+    label: str
+    current_raw: str
+    previous_raw: str
+    score: int
 
 
 def extract_document(path: str | Path) -> ExtractedDocument:
@@ -76,11 +105,11 @@ def _warn_missing_sections(pdf_path: Path, text: str, sections: dict[str, str]) 
 def extract_rows(section_text: str, statement_name: str = "") -> list[StatementRow]:
     rows: list[StatementRow] = []
     statement_key = normalize_label(statement_name) or statement_name or "statement"
-
     pending_label = ""
+
     for raw_line in section_text.splitlines():
         clean = " ".join(raw_line.strip().split())
-        if not clean:
+        if not clean or _is_pure_section_line(clean):
             continue
 
         parsed = parse_financial_row(clean)
@@ -90,10 +119,10 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
             continue
 
         label, current_raw, previous_raw = parsed
-        if pending_label and len(label.split()) <= 3:
+        if pending_label:
             label = f"{pending_label} {label}".strip()
-        pending_label = ""
-
+            pending_label = ""
+        label = _strip_category_prefix(label)
         if is_bad_label(label):
             continue
 
@@ -116,94 +145,137 @@ def parse_financial_row(line: str) -> tuple[str, str, str] | None:
     if len(tokens) < 3:
         return None
 
-    previous_tokens, index = take_number_from_right(tokens, len(tokens) - 1)
-    if not previous_tokens:
+    candidates: list[ParsedCandidate] = []
+    # Try every split of the numeric suffix into current and previous values.
+    # This avoids greedy grouping such as "32 605 31 144" -> "3260531144".
+    for current_start in range(1, len(tokens) - 1):
+        for previous_start in range(current_start + 1, len(tokens)):
+            label_tokens = tokens[:current_start]
+            current_tokens = tokens[current_start:previous_start]
+            previous_tokens = tokens[previous_start:]
+            if not _valid_value_tokens(current_tokens) or not _valid_value_tokens(previous_tokens):
+                continue
+
+            label, note_removed, note_value = _strip_trailing_note(label_tokens)
+            label = _strip_category_prefix(label)
+            if not label or is_bad_label(label):
+                continue
+            score = _candidate_score(label, current_tokens, previous_tokens, note_removed, note_value)
+            candidates.append(
+                ParsedCandidate(
+                    label=label,
+                    current_raw=" ".join(current_tokens),
+                    previous_raw=" ".join(previous_tokens),
+                    score=score,
+                )
+            )
+
+    if not candidates:
         return None
-    current_tokens, index = take_number_from_right(tokens, index)
-    if not current_tokens:
-        return None
-
-    label_tokens = tokens[: index + 1]
-    if label_tokens and re.fullmatch(r"\d{1,2}", label_tokens[-1]):
-        label_tokens = label_tokens[:-1]
-
-    label = " ".join(label_tokens).strip(" .:-")
-    if not label or is_bad_label(label):
-        return None
-    return label, " ".join(current_tokens), " ".join(previous_tokens)
+    best = max(candidates, key=lambda item: item.score)
+    return best.label, best.current_raw, best.previous_raw
 
 
-def take_number_from_right(tokens: list[str], start_index: int) -> tuple[list[str], int]:
-    if start_index < 0:
-        return [], start_index
-
-    token = tokens[start_index].strip()
-    if token == "-":
-        return ["-"], start_index - 1
-    if not is_number_piece(token):
-        return [], start_index
-
-    collected = [token]
-    i = start_index - 1
-    if _is_decimal_or_percent_piece(token) and not token.endswith(")"):
-        return collected, i
-
-    collected_group_count = 0
-    while i >= 0 and len(collected) < 5:
-        previous = tokens[i].strip()
-        if not _is_integer_piece(previous):
-            break
-        digits = re.sub(r"\D", "", previous)
-        if collected_group_count == 0:
-            if len(digits) != 3:
-                break
-            collected.insert(0, previous)
-            collected_group_count += 1
-            i -= 1
-            if previous.startswith("("):
-                break
-            continue
-
-        collected.insert(0, previous)
-        i -= 1
-        if len(digits) < 3 or previous.startswith("("):
-            break
-        if i < 0 or not _is_integer_piece(tokens[i].strip()):
-            break
-
-    return collected, i
-
-
-def is_number_piece(token: str) -> bool:
-    token = token.strip()
-    if token == "-":
+def _valid_value_tokens(tokens: list[str]) -> bool:
+    if not tokens:
+        return False
+    if tokens == ["-"]:
         return True
-    cleaned = token.strip("()").rstrip("%")
-    return bool(re.fullmatch(r"-?\d[\d.,]*", cleaned))
+    if len(tokens) == 1:
+        token = tokens[0].strip()
+        cleaned = token.strip("()").rstrip("%")
+        if "%" in token or "." in token or "," in token:
+            return bool(re.fullmatch(r"-?\d[\d.,]*", cleaned))
+        return bool(re.fullmatch(r"-?\d+", cleaned))
+
+    if not all(_is_integer_piece(token) for token in tokens):
+        return False
+    first = re.sub(r"\D", "", tokens[0])
+    if not (1 <= len(first) <= 3):
+        return False
+    if len(first) > 1 and first.startswith("0"):
+        return False
+    for token in tokens[1:]:
+        digits = re.sub(r"\D", "", token)
+        if len(digits) != 3:
+            return False
+    if tokens[0].startswith("(") and not tokens[-1].endswith(")"):
+        return False
+    if tokens[-1].endswith(")") and not tokens[0].startswith("("):
+        return False
+    return True
+
+
+def _strip_trailing_note(label_tokens: list[str]) -> tuple[str, bool, int | None]:
+    if not label_tokens:
+        return "", False, None
+    last = label_tokens[-1].strip()
+    if re.fullmatch(r"\d{1,2}", last):
+        label = " ".join(label_tokens[:-1]).strip(" .:-")
+        if label:
+            return label, True, int(last)
+    return " ".join(label_tokens).strip(" .:-"), False, None
+
+
+def _candidate_score(label: str, current_tokens: list[str], previous_tokens: list[str], note_removed: bool, note_value: int | None) -> int:
+    normalized = normalize_label(label)
+    score = 1000
+    score += len(label.split())
+    score += (len(current_tokens) + len(previous_tokens)) * 12
+    if len(current_tokens) == len(previous_tokens):
+        score += 8
+    if re.search(r"(?:^|\s)\(?\d{1,3}\)?(?:\s+\(?\d{3}\)?)+$", label):
+        score -= 80
+    if note_removed:
+        # SICAV rows often contain a small note number before the current-year value.
+        score += 40 if (note_value is not None and note_value <= 20) else -35
+    if note_removed and normalized in PROTECTED_NOTE_LABELS:
+        score -= 120
+    if not note_removed and current_tokens and re.fullmatch(r"\d{1,2}", current_tokens[0]) and normalized not in PROTECTED_NOTE_LABELS:
+        score -= 25
+    if current_tokens == ["-"] or previous_tokens == ["-"]:
+        score += 4
+    return score
 
 
 def _is_integer_piece(token: str) -> bool:
-    if _is_decimal_or_percent_piece(token):
-        return False
-    cleaned = token.strip("()")
-    return bool(re.fullmatch(r"\d{1,3}", cleaned))
-
-
-def _is_decimal_or_percent_piece(token: str) -> bool:
-    return "." in token or "," in token or "%" in token
+    cleaned = token.strip().strip("()")
+    return bool(re.fullmatch(r"-?\d{1,3}", cleaned))
 
 
 def _looks_like_label_continuation(line: str) -> bool:
-    return bool(re.search(r"[A-Za-zÀ-ÿ]", line)) and not re.search(r"\d{3}", line)
+    return _contains_alpha(line) and not _is_pure_section_line(line)
+
+
+def _is_pure_section_line(line: str) -> bool:
+    normalized = normalize_label(line)
+    return normalized in PURE_SECTION_LABELS or normalized.startswith("montants_exprimes")
+
+
+def _strip_category_prefix(label: str) -> str:
+    upper = label.upper()
+    normalized = normalize_label(label)
+    if normalized in PROTECTED_NOTE_LABELS:
+        return label
+    for prefix in CATEGORY_PREFIXES:
+        if upper.startswith(prefix) and len(label) > len(prefix):
+            return label[len(prefix):].strip(" .:-")
+    return label
+
+
+def _contains_alpha(value: str) -> bool:
+    return any(char.isalpha() for char in value)
 
 
 def is_bad_label(label: str) -> bool:
     normalized = normalize_label(label) or ""
-    if not re.search(r"[A-Za-zÀ-ÿ]", label):
+    if not _contains_alpha(label):
+        return True
+    if normalized in PURE_SECTION_LABELS:
         return True
 
-    compact = re.sub(r"[^A-Za-zÀ-ÿ0-9]", "", label)
-    if compact and sum(ch.isdigit() for ch in compact) > sum(ch.isalpha() for ch in compact):
+    compact = "".join(char for char in label if char.isalnum())
+    if compact and sum(char.isdigit() for char in compact) > sum(char.isalpha() for char in compact):
         return True
 
     return normalized in {"note", "annee", "31_12_2024", "31_12_2025", "2024", "2025"}
