@@ -22,6 +22,19 @@ def write_excel_report(path: str | Path, documents: list[ExtractedDocument], com
         return _write_basic_xlsx(output, documents, comparisons, validations, missing_years)
 
 
+def _extraction_quality_row(document: ExtractedDocument) -> dict:
+    rows = sum(len(statement.rows) for statement in document.statements.values())
+    return {
+        "document_year": document.document_year,
+        "source_file": document.source_file,
+        "extraction_method": document.extraction_method,
+        "extraction_quality_score": document.confidence,
+        "statement_count": len(document.statements),
+        "row_count": rows,
+        "statements": ", ".join(document.statements),
+    }
+
+
 def _data(documents: list[ExtractedDocument], comparisons: list[ComparisonResult], validations: list[InternalValidationResult], missing_years: list[int]) -> dict[str, list[dict]]:
     return {
         "Summary": [
@@ -33,7 +46,7 @@ def _data(documents: list[ExtractedDocument], comparisons: list[ComparisonResult
         ],
         "Cross-Year Checks": [_dump(i) for i in comparisons],
         "Internal Validation": [_dump(i) for i in validations],
-        "Extraction Quality": [{"document_year": d.document_year, "source_file": d.source_file, "extraction_method": d.extraction_method, "confidence": d.confidence, "statements": ", ".join(d.statements)} for d in documents],
+        "Extraction Quality": [_extraction_quality_row(d) for d in documents],
         "Missing Years": [{"missing_year": y} for y in missing_years],
     }
 

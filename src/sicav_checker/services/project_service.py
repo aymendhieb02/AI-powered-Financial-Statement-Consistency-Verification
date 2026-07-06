@@ -222,8 +222,7 @@ class ProjectService:
         years = [doc.document_year for doc in result.documents if doc.document_year is not None]
         old_year = min(years) if years else None
         new_year = max(years) if years else None
-        confidence_values = [doc.confidence for doc in result.documents]
-        overall_confidence = round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else 0
+        overall_confidence = self._overall_extraction_confidence(result.documents)
         company = next((doc.company for doc in result.documents if doc.company), "")
         coverage = self._coverage_summary(result)
         summary = {
@@ -251,6 +250,11 @@ class ProjectService:
             report_paths=[str(path) for path in result.report_paths],
             anomalies=[item.model_dump(mode="json") for item in non_ok],
         )
+
+    @staticmethod
+    def _overall_extraction_confidence(documents: list) -> float:
+        confidence_values = [document.confidence for document in documents]
+        return round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else 0
 
     @staticmethod
     def _coverage_summary(result: PipelineResult) -> dict:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sicav_checker.core.logging import logger
 from sicav_checker.extraction.layout_section_extractor import extract_layout_sections
+from sicav_checker.extraction.ocr_fallback import extract_with_ocr
 from sicav_checker.extraction.section_detector import SECTION_ORDER, candidate_heading_lines, detect_sections
 from sicav_checker.extraction.text_extractor import extract_text
 from sicav_checker.models import ExtractedDocument, Statement, StatementRow
@@ -15,6 +16,8 @@ from sicav_checker.normalization.year_detector import detect_document_year
 
 
 COMPARABLE_STATEMENTS = ("bilan", "etat_resultat", "etat_variation_actif_net")
+EXPECTED_MIN_ROWS = {"bilan": 8, "etat_resultat": 8, "etat_variation_actif_net": 6}
+NEAR_ZERO_TEXT_LENGTH = 200
 PROTECTED_NOTE_LABELS = {
     "total_actif",
     "total_passif",
@@ -85,7 +88,7 @@ def extract_document(path: str | Path) -> ExtractedDocument:
         if rows:
             statements[name] = Statement(name=name, rows=rows)
 
-    confidence = 0.9 if statements else 0.4
+    confidence = calculate_extraction_quality(statements)
     return ExtractedDocument(
         document_year=year,
         source_file=str(pdf_path),
@@ -96,6 +99,34 @@ def extract_document(path: str | Path) -> ExtractedDocument:
     )
 
 
+def calculate_extraction_quality(statements: dict[str, Statement]) -> float:
+    """Score document extraction quality from coverage and row confidence.
+
+    ConfidenceEngine averages row confidence for completed pipeline reports, but
+    document-level quality also needs to penalize missing statements and thin
+    extractions before a pipeline report exists. This score therefore combines
+    all three signals already available in this module.
+    """
+    if not statements:
+        return 0.0
+
+    found_statements = sum(1 for name in COMPARABLE_STATEMENTS if name in statements and statements[name].rows)
+    statement_coverage = found_statements / len(COMPARABLE_STATEMENTS)
+
+    row_coverage_parts = []
+    row_confidences: list[float] = []
+    for name in COMPARABLE_STATEMENTS:
+        rows = statements.get(name).rows if name in statements else []
+        expected_rows = EXPECTED_MIN_ROWS[name]
+        row_coverage_parts.append(min(len(rows) / expected_rows, 1.0))
+        row_confidences.extend(row.confidence for row in rows)
+
+    row_coverage = sum(row_coverage_parts) / len(row_coverage_parts)
+    row_confidence = sum(row_confidences) / len(row_confidences) if row_confidences else 0.0
+    quality = (0.45 * statement_coverage) + (0.35 * row_coverage) + (0.20 * row_confidence)
+    return round(max(0.0, min(quality, 1.0)), 4)
+
+
 def _extract_sections(pdf_path: Path) -> tuple[dict[str, str], str, str]:
     layout_sections, layout_text = extract_layout_sections(pdf_path)
     if any(section in layout_sections for section in COMPARABLE_STATEMENTS):
@@ -103,6 +134,16 @@ def _extract_sections(pdf_path: Path) -> tuple[dict[str, str], str, str]:
 
     text, method = extract_text(pdf_path)
     text_sections = detect_sections(text)
+    comparable_detected = any(section in text_sections for section in COMPARABLE_STATEMENTS)
+    if comparable_detected and text.strip():
+        return text_sections, text, method
+
+    if len(text.strip()) < NEAR_ZERO_TEXT_LENGTH or not comparable_detected:
+        ocr_text = extract_with_ocr(pdf_path)
+        ocr_sections = detect_sections(ocr_text)
+        if any(section in ocr_sections for section in COMPARABLE_STATEMENTS):
+            return ocr_sections, ocr_text, "ocr_fallback"
+
     return text_sections, text, method
 
 

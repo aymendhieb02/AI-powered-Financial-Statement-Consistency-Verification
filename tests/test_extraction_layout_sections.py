@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from sicav_checker.extraction.section_detector import detect_sections
-from sicav_checker.extraction.statement_extractor import COMPARABLE_STATEMENTS, extract_document, extract_rows, parse_financial_row
+from sicav_checker.extraction.statement_extractor import COMPARABLE_STATEMENTS, calculate_extraction_quality, extract_document, extract_rows, parse_financial_row
+from sicav_checker.models import Statement, StatementRow
 
 
 MAXULA_LIKE_TEXT = """
@@ -104,3 +105,62 @@ def test_extract_document_does_not_return_zero_rows_for_valid_text(monkeypatch, 
     assert len(document.statements["bilan"].rows) > 0
     assert len(document.statements["etat_resultat"].rows) > 0
     assert len(document.statements["etat_variation_actif_net"].rows) > 0
+
+
+
+def _rows(count: int, confidence: float = 0.85) -> list[StatementRow]:
+    return [StatementRow(label=f"Line {index}", canonical_label=f"line_{index}", current_value=index, previous_value=index, confidence=confidence) for index in range(count)]
+
+
+def test_document_extraction_quality_differentiates_empty_thin_and_complete() -> None:
+    empty = calculate_extraction_quality({})
+    thin = calculate_extraction_quality({"bilan": Statement(name="bilan", rows=_rows(1, 0.75))})
+    complete = calculate_extraction_quality(
+        {
+            "bilan": Statement(name="bilan", rows=_rows(8, 0.9)),
+            "etat_resultat": Statement(name="etat_resultat", rows=_rows(8, 0.9)),
+            "etat_variation_actif_net": Statement(name="etat_variation_actif_net", rows=_rows(6, 0.9)),
+        }
+    )
+
+    assert empty == 0.0
+    assert 0 < thin < complete
+    assert complete > 0.9
+
+
+def test_extract_document_confidence_uses_quality_score_not_binary_switch(monkeypatch, tmp_path: Path) -> None:
+    pdf_path = tmp_path / "thin_2024.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    monkeypatch.setattr("sicav_checker.extraction.statement_extractor.extract_layout_sections", lambda path: ({}, ""))
+    monkeypatch.setattr(
+        "sicav_checker.extraction.statement_extractor.extract_text",
+        lambda path: ("BILAN\nTOTAL ACTIF 100 90\nNOTES AUX ETATS FINANCIERS\n", "test_text"),
+    )
+    monkeypatch.setattr("sicav_checker.extraction.statement_extractor.extract_with_ocr", lambda path: "")
+
+    document = extract_document(pdf_path)
+
+    assert list(document.statements) == ["bilan"]
+    assert 0 < document.confidence < 0.9
+
+
+def test_extract_document_uses_ocr_only_after_text_mode_finds_no_comparable_sections(monkeypatch, tmp_path: Path) -> None:
+    pdf_path = tmp_path / "ocr_2024.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+    calls = {"ocr": 0}
+
+    monkeypatch.setattr("sicav_checker.extraction.statement_extractor.extract_layout_sections", lambda path: ({}, ""))
+    monkeypatch.setattr("sicav_checker.extraction.statement_extractor.extract_text", lambda path: ("", "pymupdf_text"))
+
+    def fake_ocr(path: Path) -> str:
+        calls["ocr"] += 1
+        return MAXULA_LIKE_TEXT
+
+    monkeypatch.setattr("sicav_checker.extraction.statement_extractor.extract_with_ocr", fake_ocr)
+
+    document = extract_document(pdf_path)
+
+    assert calls["ocr"] == 1
+    assert document.extraction_method == "ocr_fallback"
+    assert set(COMPARABLE_STATEMENTS).issubset(document.statements)
