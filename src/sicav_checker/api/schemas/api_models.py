@@ -82,6 +82,15 @@ class VerificationSummary(BaseModel):
     low_anomalies: int = 0
     risk_score: float = 0
     report_paths: list[str] = Field(default_factory=list)
+    old_extracted_lines: int = 0
+    new_extracted_lines: int = 0
+    comparable_lines: int = 0
+    matched_lines: int = 0
+    mismatched_lines: int = 0
+    missing_in_old: int = 0
+    missing_in_new: int = 0
+    ignored_lines: int = 0
+    comparison_coverage_percentage: float = 0
 
 
 class PaginatedAnomalies(BaseModel):

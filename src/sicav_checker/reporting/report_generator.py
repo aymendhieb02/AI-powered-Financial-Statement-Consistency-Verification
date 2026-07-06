@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from sicav_checker.comparison.coverage import comparison_coverage
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.reporting.excel_report import write_excel_report
 
@@ -96,7 +97,25 @@ def _summary(report: ComparisonReport) -> dict[str, Any]:
         "anomalies": sum(1 for item in [*report.comparisons, *report.validations] if item.status != "OK"),
         "missing_years": report.missing_years,
         "confidence": report.confidence.overall if report.confidence else None,
+        **_coverage(report),
     }
+
+
+def _coverage(report: ComparisonReport) -> dict[str, Any]:
+    if len(report.documents) < 2:
+        return {
+            "old_extracted_lines": 0,
+            "new_extracted_lines": 0,
+            "comparable_lines": len(report.comparisons),
+            "matched_lines": 0,
+            "mismatched_lines": 0,
+            "missing_in_old": 0,
+            "missing_in_new": 0,
+            "ignored_lines": 0,
+            "comparison_coverage_percentage": 0.0,
+        }
+    docs = sorted(report.documents, key=lambda document: document.document_year or 0)
+    return comparison_coverage(docs[0], docs[-1], report.comparisons)
 
 
 def _summary_rows(report: ComparisonReport) -> list[dict[str, Any]]:

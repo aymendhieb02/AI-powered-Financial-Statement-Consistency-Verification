@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from sicav_checker.comparison.coverage import comparison_coverage
 from sicav_checker.config import Settings, settings
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.exceptions import StorageError
@@ -222,6 +223,7 @@ class ProjectService:
         confidence_values = [doc.confidence for doc in result.documents]
         overall_confidence = round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else 0
         company = next((doc.company for doc in result.documents if doc.company), "")
+        coverage = self._coverage_summary(result)
         summary = {
             "company": company,
             "old_document_year": old_year,
@@ -239,6 +241,7 @@ class ProjectService:
             "overall_confidence": overall_confidence,
             "risk_score": risk_score,
             "report_paths": [str(path) for path in result.report_paths],
+            **coverage,
         }
         return VerificationRunRecord(
             project_id=project_id,
@@ -246,6 +249,23 @@ class ProjectService:
             report_paths=[str(path) for path in result.report_paths],
             anomalies=[item.model_dump(mode="json") for item in non_ok],
         )
+
+    @staticmethod
+    def _coverage_summary(result: PipelineResult) -> dict:
+        if len(result.documents) < 2:
+            return {
+                "old_extracted_lines": 0,
+                "new_extracted_lines": 0,
+                "comparable_lines": len(result.comparisons),
+                "matched_lines": 0,
+                "mismatched_lines": 0,
+                "missing_in_old": 0,
+                "missing_in_new": 0,
+                "ignored_lines": 0,
+                "comparison_coverage_percentage": 0.0,
+            }
+        docs = sorted(result.documents, key=lambda document: document.document_year or 0)
+        return comparison_coverage(docs[0], docs[-1], result.comparisons)
 
     def _write_projects(self, projects: list[ProjectRecord]) -> None:
         self.index_path.parent.mkdir(parents=True, exist_ok=True)

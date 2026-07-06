@@ -42,6 +42,8 @@ export function ResultsPage() {
   const confidence = formatConfidence(summary.overall_confidence, summary.values_checked);
   const risk = getRisk(summary.risk_score);
   const hasReports = Boolean(projectId && runId && runId !== 'latest' && summary.report_paths?.length);
+  const comparableLines = summary.comparable_lines ?? summary.values_checked;
+  const coveragePercent = summary.comparison_coverage_percentage;
 
   return (
     <section className="space-y-6">
@@ -73,6 +75,17 @@ export function ResultsPage() {
         </CardContent>
       </Card>
 
+      {comparableLines < 20 && (
+        <Card className="border-l-4 border-l-amber-500">
+          <CardContent className="p-5">
+            <div className="text-sm font-semibold text-amber-800">Low comparison coverage</div>
+            <p className="mt-1 text-sm text-slate-600">
+              FinVerify extracted only {comparableLines} comparable values. Review extraction quality.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="grid gap-4 p-5 text-sm md:grid-cols-5">
           <Fact label="Company" value={summary.company || 'Not detected'} />
@@ -93,6 +106,20 @@ export function ResultsPage() {
         <StatCard label="Low anomalies" value={summary.low_anomalies} tone="blue" />
         <StatCard label="Confidence" value={confidence} icon={<ShieldCheck size={18} />} tone="emerald" />
       </div>
+
+      <Card>
+        <CardContent className="p-5">
+          <div className="text-sm font-semibold text-slate-950">Comparison Coverage</div>
+          <div className="mt-4 grid gap-4 text-sm md:grid-cols-3 xl:grid-cols-6">
+            <Fact label="Old extracted lines" value={summary.old_extracted_lines ?? 'Not detected'} />
+            <Fact label="New extracted lines" value={summary.new_extracted_lines ?? 'Not detected'} />
+            <Fact label="Comparable lines" value={comparableLines} />
+            <Fact label="Ignored lines" value={summary.ignored_lines ?? 0} />
+            <Fact label="Missing in old" value={summary.missing_in_old ?? 0} />
+            <Fact label="Coverage" value={coveragePercent == null ? 'Not calculated' : `${coveragePercent}%`} />
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

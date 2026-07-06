@@ -11,7 +11,9 @@ from sicav_checker.normalization.number_normalizer import normalize_number
 from sicav_checker.normalization.year_detector import detect_document_year
 
 
-ROW_RE = re.compile(r"^(?P<label>[A-Za-zÀ-ÿ0-9'’ /().,&-]{3,}?)\s+(?P<current>[-(]?\d[\d\s.,]*\)?|-)\s+(?P<previous>[-(]?\d[\d\s.,]*\)?|-)\s*$")
+NUMBER_RE = r"[-(]?\d[\d\s.,]*\)?|-"
+ROW_RE = re.compile(rf"^(?P<label>.+?)\s+(?P<current>{NUMBER_RE})\s+(?P<previous>{NUMBER_RE})\s*$")
+COMPARABLE_STATEMENTS = ("bilan", "etat_resultat", "etat_variation_actif_net", "notes")
 
 
 def extract_document(path: str | Path) -> ExtractedDocument:
@@ -20,9 +22,11 @@ def extract_document(path: str | Path) -> ExtractedDocument:
     year = detect_document_year(pdf_path, text)
     sections = detect_sections(text)
     statements: dict[str, Statement] = {}
-    for name in ("bilan", "etat_resultat", "etat_variation_actif_net"):
+    for name in COMPARABLE_STATEMENTS:
         if name in sections:
-            statements[name] = Statement(name=name, rows=extract_rows(sections[name]))
+            rows = extract_rows(sections[name], statement_name=name)
+            if rows:
+                statements[name] = Statement(name=name, rows=rows)
     confidence = 0.9 if statements else 0.4
     return ExtractedDocument(
         document_year=year,
@@ -34,17 +38,16 @@ def extract_document(path: str | Path) -> ExtractedDocument:
     )
 
 
-def extract_rows(section_text: str) -> list[StatementRow]:
+def extract_rows(section_text: str, statement_name: str = "") -> list[StatementRow]:
     rows: list[StatementRow] = []
+    statement_key = normalize_label(statement_name) or statement_name or "statement"
     for line in section_text.splitlines():
         clean = " ".join(line.strip().split())
         match = ROW_RE.match(clean)
         if not match:
             continue
-        label = match.group("label").strip()
-        canonical = normalize_label(label)
-        if not canonical:
-            continue
+        label = match.group("label").strip(" .:-")
+        canonical = normalize_label(label) or f"{statement_key}__unknown_line_{len(rows) + 1}"
         rows.append(
             StatementRow(
                 label=label,

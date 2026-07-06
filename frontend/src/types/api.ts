@@ -54,6 +54,15 @@ export type VerificationSummary = {
   low_anomalies: number;
   risk_score: number;
   report_paths: string[];
+  old_extracted_lines?: number;
+  new_extracted_lines?: number;
+  comparable_lines?: number;
+  matched_lines?: number;
+  mismatched_lines?: number;
+  missing_in_old?: number;
+  missing_in_new?: number;
+  ignored_lines?: number;
+  comparison_coverage_percentage?: number;
 };
 
 export type Anomaly = {

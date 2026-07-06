@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from difflib import SequenceMatcher
 
 try:
@@ -9,9 +10,20 @@ except ImportError:
     process = None
 
 
+def _number_tokens(label: str) -> list[str]:
+    return re.findall(r"\d+", label)
+
+
+def _compatible_number_tokens(source: str, candidate: str) -> bool:
+    source_numbers = _number_tokens(source)
+    candidate_numbers = _number_tokens(candidate)
+    return not source_numbers or not candidate_numbers or source_numbers == candidate_numbers
+
+
 def match_label(canonical_label: str, candidates: list[str], threshold: int = 88) -> tuple[str | None, float, bool]:
     if canonical_label in candidates:
         return canonical_label, 100.0, False
+    candidates = [candidate for candidate in candidates if _compatible_number_tokens(canonical_label, candidate)]
     if not candidates:
         return None, 0.0, False
     if process is None or fuzz is None:
