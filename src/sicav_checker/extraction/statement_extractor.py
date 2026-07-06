@@ -35,6 +35,32 @@ PURE_SECTION_LABELS = {
     "note_annee_2024_annee_2023",
 }
 CATEGORY_PREFIXES = ("PASSIF ", "ACTIF NET ", "ACTIF ")
+PARENT_CONTEXTS = {
+    "souscriptions": "souscriptions",
+    "rachats": "rachats",
+    "des_operations_exploitation": "operations_exploitation",
+    "operations_exploitation": "operations_exploitation",
+    "actif_net": "actif_net",
+    "nombre_actions": "nombre_actions",
+}
+VARIATION_CONTEXT_LABELS = {
+    "capital",
+    "regularisation_sommes_non_distribuables",
+    "regularisation_sommes_distribuables",
+}
+LIKELY_NOTE_LABELS = {
+    "creances_exploitation",
+    "operateurs_crediteurs",
+    "autres_crediteurs_divers",
+    "revenus_placements_monetaires",
+    "charges_gestion_placements",
+    "portefeuille_titres",
+}
+GLUED_ROW_PATTERNS = (
+    re.compile(r"Portefeuille-titres", re.IGNORECASE),
+    re.compile(r"VARIATION\s+DE\s+L['\u2019]ACTIF\s+NET\s+RESULTANT", re.IGNORECASE),
+    re.compile(r"R\S*sultat\s+d['\u2019]exploitation", re.IGNORECASE),
+)
 
 
 @dataclass(frozen=True)
@@ -106,10 +132,19 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
     rows: list[StatementRow] = []
     statement_key = normalize_label(statement_name) or statement_name or "statement"
     pending_label = ""
+    parent_context = ""
 
     for raw_line in section_text.splitlines():
-        clean = " ".join(raw_line.strip().split())
-        if not clean or _is_pure_section_line(clean):
+        clean, header_cleaned = _clean_extracted_line(raw_line)
+        if not clean:
+            continue
+
+        context = _parent_context_for_heading(clean)
+        if context:
+            parent_context = context
+            pending_label = ""
+            continue
+        if _is_pure_section_line(clean):
             continue
 
         parsed = parse_financial_row(clean)
@@ -119,26 +154,35 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
             continue
 
         label, current_raw, previous_raw = parsed
+        confidence = 0.75 if header_cleaned else 0.85
         if pending_label:
             label = f"{pending_label} {label}".strip()
             pending_label = ""
+            confidence = min(confidence, 0.75)
         label = _strip_category_prefix(label)
+        if label.startswith("- "):
+            label = label[2:].strip()
         if is_bad_label(label):
             continue
 
-        canonical = normalize_label(label) or f"{statement_key}__unknown_line_{len(rows) + 1}"
+        normalized = normalize_label(label)
+        if not normalized:
+            canonical = f"{statement_key}__unknown_line_{len(rows) + 1}"
+        elif statement_key == "variation_actif_net" and parent_context and normalized in VARIATION_CONTEXT_LABELS:
+            canonical = f"{statement_key}__{parent_context}_{normalized}"
+        else:
+            canonical = normalized
         rows.append(
             StatementRow(
                 label=label,
                 canonical_label=canonical,
                 current_value=normalize_number(current_raw),
                 previous_value=normalize_number(previous_raw),
-                confidence=0.85,
+                confidence=confidence,
             )
         )
 
     return rows
-
 
 def parse_financial_row(line: str) -> tuple[str, str, str] | None:
     tokens = line.split()
@@ -221,18 +265,30 @@ def _candidate_score(label: str, current_tokens: list[str], previous_tokens: lis
     normalized = normalize_label(label)
     score = 1000
     score += len(label.split())
-    score += (len(current_tokens) + len(previous_tokens)) * 12
-    if len(current_tokens) == len(previous_tokens):
+    score += (len(current_tokens) + len(previous_tokens)) * 15
+    current_len = len(current_tokens)
+    previous_len = len(previous_tokens)
+    if current_len == previous_len:
         score += 8
     if re.search(r"(?:^|\s)\(?\d{1,3}\)?(?:\s+\(?\d{3}\)?)+$", label):
-        score -= 80
+        score -= 90
     if note_removed:
         # SICAV rows often contain a small note number before the current-year value.
-        score += 40 if (note_value is not None and note_value <= 20) else -35
+        score += 36 if (note_value is not None and note_value <= 20) else -40
+        if normalized in LIKELY_NOTE_LABELS:
+            score += 90
+            if current_len >= previous_len:
+                score += 20
+        elif previous_tokens == ["-"]:
+            score -= 130
+        elif previous_len > current_len:
+            score -= 130
     if note_removed and normalized in PROTECTED_NOTE_LABELS:
-        score -= 120
+        score -= 140
+    if note_removed and previous_len - current_len >= 2 and previous_len >= 4:
+        score -= 95
     if not note_removed and current_tokens and re.fullmatch(r"\d{1,2}", current_tokens[0]) and normalized not in PROTECTED_NOTE_LABELS:
-        score -= 25
+        score -= 18
     if current_tokens == ["-"] or previous_tokens == ["-"]:
         score += 4
     return score
@@ -242,9 +298,40 @@ def _is_integer_piece(token: str) -> bool:
     cleaned = token.strip().strip("()")
     return bool(re.fullmatch(r"-?\d{1,3}", cleaned))
 
+def _clean_extracted_line(raw_line: str) -> tuple[str, bool]:
+    line = " ".join(raw_line.strip().split())
+    if not line:
+        return "", False
+
+    line = re.sub(r"^\((?:Montants|Amounts).*?\)\s*", "", line, flags=re.IGNORECASE)
+    for pattern in GLUED_ROW_PATTERNS:
+        match = pattern.search(line)
+        if match and match.start() > 0:
+            return line[match.start():].strip(), True
+
+    normalized = normalize_label(line)
+    if normalized.startswith("bilan_arrete_au"):
+        return "", True
+    if normalized in {"etat_resultat", "etat_variation_actif_net"}:
+        return "", True
+    if normalized.startswith("note_annee") or normalized.startswith("actif_note"):
+        return "", True
+
+    for prefix in (
+        "DES OPERATIONS D'EXPLOITATION ",
+        "DES OPERATIONS D EXPLOITATION ",
+    ):
+        if line.upper().startswith(prefix):
+            return line[len(prefix):].strip(), True
+
+    return line, False
+
+
+def _parent_context_for_heading(line: str) -> str:
+    return PARENT_CONTEXTS.get(normalize_label(line), "")
 
 def _looks_like_label_continuation(line: str) -> bool:
-    return _contains_alpha(line) and not _is_pure_section_line(line)
+    return _contains_alpha(line) and not _is_pure_section_line(line) and not _parent_context_for_heading(line)
 
 
 def _is_pure_section_line(line: str) -> bool:

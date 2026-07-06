@@ -39,8 +39,18 @@ ALIASES = {
 }
 
 
+
+def _repair_mojibake(value: str) -> str:
+    if "\u00c3" not in value and "\u00c2" not in value:
+        return value
+    try:
+        return value.encode("latin1").decode("utf-8")
+    except UnicodeError:
+        return value
+
+
 def normalize_label(label: str) -> str:
-    text = unidecode(label or "").lower()
+    text = unidecode(_repair_mojibake(label or "")).lower()
     text = text.replace("&", " et ")
     text = re.sub(r"['\u2019]", " ", text)
     text = re.sub(r"[^a-z0-9]+", " ", text)

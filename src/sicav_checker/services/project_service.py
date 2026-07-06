@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import shutil
@@ -216,6 +216,8 @@ class ProjectService:
         medium = sum(1 for item in non_ok if item.severity == "MEDIUM")
         low = sum(1 for item in non_ok if item.severity == "LOW")
         risk_score = min(100, critical * 25 + medium * 10 + low * 3)
+        if critical == 0:
+            risk_score = min(risk_score, 80)
         missing = sum(1 for item in comparisons if item.status in MISSING_NEW_STATUSES or item.status in MISSING_OLD_STATUSES)
         years = [doc.document_year for doc in result.documents if doc.document_year is not None]
         old_year = min(years) if years else None

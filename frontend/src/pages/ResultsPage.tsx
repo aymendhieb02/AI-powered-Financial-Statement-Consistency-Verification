@@ -40,7 +40,7 @@ export function ResultsPage() {
   const verdict = getVerdict(summary);
   const consistency = getConsistency(summary);
   const confidence = formatConfidence(summary.overall_confidence, summary.values_checked);
-  const risk = getRisk(summary.risk_score);
+  const risk = getRisk(summary.risk_score, summary.critical_anomalies);
   const hasReports = Boolean(projectId && runId && runId !== 'latest' && summary.report_paths?.length);
   const comparableLines = summary.comparable_lines ?? summary.values_checked;
   const coveragePercent = summary.comparison_coverage_percentage;
@@ -212,8 +212,9 @@ function formatConfidence(confidence: number | undefined, comparedValues: number
   return `${(confidence * 100).toFixed(1)}%`;
 }
 
-function getRisk(score: number) {
-  if (score >= 81) return { level: 'CRITICAL', explanation: 'Critical verification issues detected.' };
+function getRisk(score: number, criticalAnomalies: number) {
+  if (criticalAnomalies > 0 && score >= 81) return { level: 'CRITICAL', explanation: 'Critical verification issues detected.' };
+  if (score >= 81) return { level: 'HIGH', explanation: 'Manual accountant review recommended.' };
   if (score >= 51) return { level: 'HIGH', explanation: 'Manual accountant review recommended.' };
   if (score >= 21) return { level: 'MEDIUM', explanation: 'Manual accountant review recommended.' };
   return { level: 'LOW', explanation: 'Low review effort expected.' };
