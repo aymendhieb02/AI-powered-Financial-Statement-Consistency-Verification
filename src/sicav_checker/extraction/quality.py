@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -20,7 +21,9 @@ REQUIRED_TOTALS = {
 }
 POLLUTED_LABEL_FRAGMENTS = (
     "bilan_arrete",
+    "etat_de_resultat_annee",
     "etat_resultat_annee",
+    "etat_de_variation_actif_net_annee",
     "etat_variation_actif_net_annee",
     "montants_exprimes",
     "annee_202",
@@ -142,8 +145,12 @@ def score_extraction(
 
 
 def _is_polluted_label(label: str) -> bool:
+    raw_key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
     normalized = normalize_label(label)
-    return any(fragment in normalized for fragment in POLLUTED_LABEL_FRAGMENTS)
+    return any(
+        fragment in raw_key or fragment in normalized
+        for fragment in POLLUTED_LABEL_FRAGMENTS
+    )
 
 
 def _duplicate_count(document: ExtractedDocument) -> int:

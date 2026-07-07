@@ -51,6 +51,11 @@ VARIATION_CONTEXT_LABELS = {
     "regularisation_sommes_non_distribuables",
     "regularisation_sommes_distribuables",
 }
+VARIATION_PERIOD_LABELS = {"en_debut_exercice", "en_fin_exercice"}
+VARIATION_PERIOD_CONTEXTS = ("actif_net", "nombre_actions")
+EMBEDDED_ROW_TITLE_PATTERNS = (
+    re.compile(r"VARIATION\s+DE\s+L['\u2019]ACTIF\s+NET", re.IGNORECASE),
+)
 LIKELY_NOTE_LABELS = {
     "creances_exploitation",
     "operateurs_crediteurs",
@@ -59,10 +64,14 @@ LIKELY_NOTE_LABELS = {
     "charges_gestion_placements",
     "portefeuille_titres",
 }
-GLUED_ROW_PATTERNS = (
-    re.compile(r"Portefeuille-titres", re.IGNORECASE),
-    re.compile(r"VARIATION\s+DE\s+L['\u2019]ACTIF\s+NET\s+RESULTANT", re.IGNORECASE),
-    re.compile(r"R\S*sultat\s+d['\u2019]exploitation", re.IGNORECASE),
+HEADER_PREFIX_PATTERNS = (
+    re.compile(r"^\s*BILAN\s+(?:ARRETE\s+)?(?:AU\s+)?31\s+DECEMBRE\s+\d{4}\s*", re.IGNORECASE),
+    re.compile(r"^\s*ETAT\s+(?:DE\s+)?RESULTAT\s*", re.IGNORECASE),
+    re.compile(r"^\s*ETAT\s+DE\s+VARIATION\s+DE\s+L['\u2019]ACTIF\s+NET\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:ACTIF|PASSIF)\s+Note\s+(?:(?:\d{1,2}/\d{1,2}/\d{2,4})\s*){1,4}", re.IGNORECASE),
+    re.compile(r"^\s*Note\s+(?:Ann\S*e\s+\d{4}\s*){1,4}", re.IGNORECASE),
+    re.compile(r"^\s*Ann\S*e\s+\d{4}(?:\s+Ann\S*e\s+\d{4})*\s*", re.IGNORECASE),
+    re.compile(r"^\s*DES\s+OPERATIONS\s+D['\u2019]?\s*EXPLOITATION\s*", re.IGNORECASE),
 )
 
 
@@ -164,6 +173,7 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
     statement_key = normalize_label(statement_name) or statement_name or "statement"
     pending_label = ""
     parent_context = ""
+    variation_period_counts: dict[str, int] = {}
 
     for raw_line in section_text.splitlines():
         clean, header_cleaned = _clean_extracted_line(raw_line)
@@ -191,6 +201,7 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
             pending_label = ""
             confidence = min(confidence, 0.75)
         label = _strip_category_prefix(label)
+        label = _strip_embedded_row_title(label)
         if label.startswith("- "):
             label = label[2:].strip()
         if is_bad_label(label):
@@ -199,6 +210,11 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
         normalized = normalize_label(label)
         if not normalized:
             canonical = f"{statement_key}__unknown_line_{len(rows) + 1}"
+        elif statement_key == "variation_actif_net" and normalized in VARIATION_PERIOD_LABELS:
+            count = variation_period_counts.get(normalized, 0)
+            context = VARIATION_PERIOD_CONTEXTS[count] if count < len(VARIATION_PERIOD_CONTEXTS) else f"occurrence_{count + 1}"
+            variation_period_counts[normalized] = count + 1
+            canonical = f"{statement_key}__{context}_{normalized}"
         elif statement_key == "variation_actif_net" and parent_context and normalized in VARIATION_CONTEXT_LABELS:
             canonical = f"{statement_key}__{parent_context}_{normalized}"
         else:
@@ -335,28 +351,50 @@ def _clean_extracted_line(raw_line: str) -> tuple[str, bool]:
         return "", False
 
     line = re.sub(r"^\((?:Montants|Amounts).*?\)\s*", "", line, flags=re.IGNORECASE)
-    for pattern in GLUED_ROW_PATTERNS:
-        match = pattern.search(line)
-        if match and match.start() > 0:
-            return line[match.start():].strip(), True
+    line, header_cleaned = _strip_table_header_prefixes(line)
+    if not line:
+        return "", True
 
     normalized = normalize_label(line)
-    if normalized.startswith("bilan_arrete_au"):
-        return "", True
-    if normalized in {"etat_resultat", "etat_variation_actif_net"}:
-        return "", True
-    if normalized.startswith("note_annee") or normalized.startswith("actif_note"):
+    if _is_standalone_header(normalized):
         return "", True
 
-    for prefix in (
-        "DES OPERATIONS D'EXPLOITATION ",
-        "DES OPERATIONS D EXPLOITATION ",
-    ):
-        if line.upper().startswith(prefix):
-            return line[len(prefix):].strip(), True
+    return line, header_cleaned
 
-    return line, False
 
+def _strip_table_header_prefixes(line: str) -> tuple[str, bool]:
+    changed = False
+    previous = None
+    date_prefix = re.compile(r"^\s*(?:\d{1,2}/\d{1,2}/\d{2,4}\s*){1,4}")
+    while line != previous:
+        previous = line
+        for pattern in HEADER_PREFIX_PATTERNS:
+            match = pattern.match(line)
+            if match:
+                line = " ".join(line[match.end():].strip(" .:-").split())
+                changed = True
+        match = date_prefix.match(line)
+        if match:
+            line = " ".join(line[match.end():].strip(" .:-").split())
+            changed = True
+    return line, changed
+
+
+def _is_standalone_header(normalized: str) -> bool:
+    if not normalized:
+        return True
+    if normalized.startswith(("bilan_arrete", "note_annee", "actif_note", "passif_note")):
+        return True
+    if normalized in {"etat_resultat", "etat_variation_actif_net", "annee", "note"}:
+        return True
+    return bool(re.fullmatch(r"(?:31_12_)?\d{4}(?:_(?:31_12_)?\d{4})*", normalized))
+
+def _strip_embedded_row_title(label: str) -> str:
+    for pattern in EMBEDDED_ROW_TITLE_PATTERNS:
+        match = pattern.search(label)
+        if match and match.start() > 0:
+            return label[match.start():].strip(" .:-")
+    return label
 
 def _parent_context_for_heading(line: str) -> str:
     return PARENT_CONTEXTS.get(normalize_label(line), "")

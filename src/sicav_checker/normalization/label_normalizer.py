@@ -27,8 +27,6 @@ ALIASES = {
     "etat_variation_actif_net": "variation_actif_net",
     "nombre_titres": "nombre_actions",
     "total_actif": "total_actif",
-    "total_actifs": "total_actif",
-    "total_actif": "total_actif",
     "total_des_actifs": "total_actif",
     "total_passif_actif_net": "total_passif_actif_net",
     "total_passif_et_actif_net": "total_passif_actif_net",
@@ -38,6 +36,16 @@ ALIASES = {
     "sommes_distribuables_exercice": "sommes_distribuables_exercice",
 }
 
+HEADER_PREFIX_PATTERNS = (
+    re.compile(r"^\s*bilan\s+(?:arrete\s+)?(?:au\s+)?31\s+decembre\s+\d{4}\b"),
+    re.compile(r"^\s*etat\s+(?:de\s+)?resultat\b"),
+    re.compile(r"^\s*etat\s+de\s+variation\s+de\s+l\s+actif\s+net\b"),
+    re.compile(r"^\s*note\s+(?:annee\s+\d{4}\s*){1,4}"),
+    re.compile(r"^\s*annee\s+\d{4}(?:\s+annee\s+\d{4})*"),
+    re.compile(r"^\s*(?:actif|passif)\s+note\b"),
+    re.compile(r"^\s*montants\s+exprimes.*?tunisiens\b"),
+    re.compile(r"^\s*des\s+operations\s+d\s+exploitation\b"),
+)
 
 
 def _repair_mojibake(value: str) -> str:
@@ -49,10 +57,23 @@ def _repair_mojibake(value: str) -> str:
         return value
 
 
+def _strip_header_noise(text: str) -> str:
+    text = text.replace("_", " ")
+    text = re.sub(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", " ", text)
+    previous = None
+    while text != previous:
+        previous = text
+        text = " ".join(text.split())
+        for pattern in HEADER_PREFIX_PATTERNS:
+            text = pattern.sub(" ", text).strip()
+    return text
+
+
 def normalize_label(label: str) -> str:
     text = unidecode(_repair_mojibake(label or "")).lower()
     text = text.replace("&", " et ")
-    text = re.sub(r"['\u2019]", " ", text)
+    text = re.sub(r"[\x27\u2019]", " ", text)
+    text = _strip_header_noise(text)
     text = re.sub(r"[^a-z0-9]+", " ", text)
     tokens = [token for token in text.split() if token not in STOPWORDS]
     normalized = "_".join(tokens)

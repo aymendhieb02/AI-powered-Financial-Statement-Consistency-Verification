@@ -154,3 +154,91 @@ def test_variation_statement_duplicate_labels_include_parent_context() -> None:
     assert rows[1].canonical_label == "variation_actif_net__souscriptions_regularisation_sommes_non_distribuables"
     assert rows[2].canonical_label == "variation_actif_net__rachats_capital"
     assert rows[3].canonical_label == "variation_actif_net__rachats_regularisation_sommes_distribuables"
+
+
+@pytest.mark.parametrize("year", range(2020, 2026))
+def test_extract_rows_strips_year_specific_balance_headers_from_portefeuille_titres(year: int) -> None:
+    previous_year = year - 1
+    rows = extract_rows(
+        f"BILAN ARRETE AU 31 DECEMBRE {year} ACTIF Note 31/12/{year} 31/12/{previous_year} "
+        "Portefeuille-titres 4 7 826 775 7 701 801",
+        "bilan",
+    )
+
+    assert len(rows) == 1
+    assert rows[0].label == "Portefeuille-titres"
+    assert rows[0].canonical_label == "portefeuille_titres"
+    assert rows[0].current_value == 7826775
+
+
+def test_extract_rows_discards_page_and_year_headers() -> None:
+    rows = extract_rows(
+        """
+        BILAN ARRETE AU 31 DECEMBRE 2025
+        ACTIF
+        Note Année 2025 Année 2024
+        Année 2025 Année 2024 Revenus des obligations 100 90
+        """,
+        "etat_resultat",
+    )
+
+    assert [row.label for row in rows] == ["Revenus des obligations"]
+    assert rows[0].canonical_label == "revenus_obligations"
+
+
+def test_extract_rows_does_not_collapse_result_regularisation_and_annulation() -> None:
+    rows = extract_rows(
+        """
+        DES OPERATIONS D'EXPLOITATION Résultat d'exploitation 196 809 178 906
+        Régularisation du résultat d'exploitation 10 000 9 000
+        Annulation du résultat d'exploitation 5 000 4 000
+        Résultat d'exploitation (annulation) 3 000 2 000
+        """,
+        "etat_resultat",
+    )
+
+    assert [row.label for row in rows] == [
+        "Résultat d'exploitation",
+        "Régularisation du résultat d'exploitation",
+        "Annulation du résultat d'exploitation",
+        "Résultat d'exploitation (annulation)",
+    ]
+    assert {row.canonical_label for row in rows} == {
+        "resultat_exploitation",
+        "regularisation_resultat_exploitation",
+        "annulation_resultat_exploitation",
+        "resultat_exploitation_annulation",
+    }
+
+
+
+def test_variation_statement_repeated_period_rows_are_contextualized() -> None:
+    rows = extract_rows(
+        """
+        En début de l'exercice 12 170 616 10 691 259
+        En fin de l'exercice 14 266 685 12 170 616
+        En début de l'exercice 113 073 101 165
+        En fin de l'exercice 131 899 113 073
+        """,
+        "etat_variation_actif_net",
+    )
+
+    assert [row.canonical_label for row in rows] == [
+        "variation_actif_net__actif_net_en_debut_exercice",
+        "variation_actif_net__actif_net_en_fin_exercice",
+        "variation_actif_net__nombre_actions_en_debut_exercice",
+        "variation_actif_net__nombre_actions_en_fin_exercice",
+    ]
+
+
+def test_variation_statement_embedded_title_wins_over_pending_label() -> None:
+    rows = extract_rows(
+        """
+        Droits de sortie
+        VARIATION DE L'ACTIF NET 2 096 069 1 479 357
+        """,
+        "etat_variation_actif_net",
+    )
+
+    assert rows[0].label == "VARIATION DE L'ACTIF NET"
+    assert rows[0].canonical_label == "variation_actif_net"
