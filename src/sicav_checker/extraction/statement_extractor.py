@@ -77,6 +77,16 @@ class ParsedCandidate:
 def extract_document(path: str | Path) -> ExtractedDocument:
     pdf_path = Path(path)
     sections, text, method = _extract_sections(pdf_path)
+    return build_document_from_sections(pdf_path, sections, text, method)
+
+
+def build_document_from_sections(
+    pdf_path: str | Path,
+    sections: dict[str, str],
+    text: str,
+    method: str,
+) -> ExtractedDocument:
+    pdf_path = Path(pdf_path)
     _write_debug_outputs(pdf_path, text, sections)
     year = detect_document_year(pdf_path, text)
     _warn_missing_sections(pdf_path, text, sections)
@@ -100,31 +110,11 @@ def extract_document(path: str | Path) -> ExtractedDocument:
 
 
 def calculate_extraction_quality(statements: dict[str, Statement]) -> float:
-    """Score document extraction quality from coverage and row confidence.
+    """Compatibility wrapper around the shared extraction quality scorer."""
+    from sicav_checker.extraction.quality import score_extraction
 
-    ConfidenceEngine averages row confidence for completed pipeline reports, but
-    document-level quality also needs to penalize missing statements and thin
-    extractions before a pipeline report exists. This score therefore combines
-    all three signals already available in this module.
-    """
-    if not statements:
-        return 0.0
-
-    found_statements = sum(1 for name in COMPARABLE_STATEMENTS if name in statements and statements[name].rows)
-    statement_coverage = found_statements / len(COMPARABLE_STATEMENTS)
-
-    row_coverage_parts = []
-    row_confidences: list[float] = []
-    for name in COMPARABLE_STATEMENTS:
-        rows = statements.get(name).rows if name in statements else []
-        expected_rows = EXPECTED_MIN_ROWS[name]
-        row_coverage_parts.append(min(len(rows) / expected_rows, 1.0))
-        row_confidences.extend(row.confidence for row in rows)
-
-    row_coverage = sum(row_coverage_parts) / len(row_coverage_parts)
-    row_confidence = sum(row_confidences) / len(row_confidences) if row_confidences else 0.0
-    quality = (0.45 * statement_coverage) + (0.35 * row_coverage) + (0.20 * row_confidence)
-    return round(max(0.0, min(quality, 1.0)), 4)
+    document = ExtractedDocument(document_year=2000, source_file="quality-probe.pdf", extraction_method="quality", statements=statements)
+    return score_extraction(document, "quality").confidence
 
 
 def _extract_sections(pdf_path: Path) -> tuple[dict[str, str], str, str]:

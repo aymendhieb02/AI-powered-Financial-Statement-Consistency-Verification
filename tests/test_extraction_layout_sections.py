@@ -117,9 +117,27 @@ def test_document_extraction_quality_differentiates_empty_thin_and_complete() ->
     thin = calculate_extraction_quality({"bilan": Statement(name="bilan", rows=_rows(1, 0.75))})
     complete = calculate_extraction_quality(
         {
-            "bilan": Statement(name="bilan", rows=_rows(8, 0.9)),
-            "etat_resultat": Statement(name="etat_resultat", rows=_rows(8, 0.9)),
-            "etat_variation_actif_net": Statement(name="etat_variation_actif_net", rows=_rows(6, 0.9)),
+            "bilan": Statement(
+                name="bilan",
+                rows=[
+                    StatementRow(label="TOTAL ACTIF", canonical_label="total_actif", current_value=1000, previous_value=900, confidence=0.9),
+                    StatementRow(label="TOTAL PASSIF", canonical_label="total_passif", current_value=200, previous_value=180, confidence=0.9),
+                    StatementRow(label="ACTIF NET", canonical_label="actif_net", current_value=800, previous_value=720, confidence=0.9),
+                    StatementRow(label="TOTAL PASSIF ET ACTIF NET", canonical_label="total_passif_et_actif_net", current_value=1000, previous_value=900, confidence=0.9),
+                    *_rows(12, 0.9),
+                ],
+            ),
+            "etat_resultat": Statement(
+                name="etat_resultat",
+                rows=[
+                    StatementRow(label="TOTAL DES REVENUS DES PLACEMENTS", canonical_label="total_revenus_placements", current_value=100, previous_value=90, confidence=0.9),
+                    StatementRow(label="RESULTAT DE L'EXERCICE", canonical_label="resultat_net", current_value=80, previous_value=70, confidence=0.9),
+                    StatementRow(label="VALEUR LIQUIDATIVE", canonical_label="valeur_liquidative", current_value=108, previous_value=107, confidence=0.9),
+                    StatementRow(label="TAUX DE RENDEMENT", canonical_label="taux_rendement", current_value=5, previous_value=4, confidence=0.9),
+                    *_rows(12, 0.9),
+                ],
+            ),
+            "etat_variation_actif_net": Statement(name="etat_variation_actif_net", rows=_rows(12, 0.9)),
         }
     )
 

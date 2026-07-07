@@ -7,19 +7,20 @@ from sicav_checker.evidence.evidence_tracker import EvidenceTracker
 from sicav_checker.domain.models import FinancialDocument
 from sicav_checker.exceptions import ExtractionError
 from sicav_checker.extraction.pdf_loader import list_pdfs
-from sicav_checker.extraction.statement_extractor import extract_document
+from sicav_checker.extraction.extraction_manager import ExtractionManager
 
 
 class ExtractionService:
     """Turns PDFs into canonical FinancialDocument objects."""
 
-    def __init__(self, evidence_tracker: EvidenceTracker | None = None) -> None:
+    def __init__(self, evidence_tracker: EvidenceTracker | None = None, extraction_manager: ExtractionManager | None = None) -> None:
         self.evidence_tracker = evidence_tracker or EvidenceTracker()
+        self.extraction_manager = extraction_manager or ExtractionManager()
 
     def extract_pdf(self, path: Path) -> FinancialDocument:
         with log_stage("extract_pdf", file=str(path)):
             try:
-                return self.evidence_tracker.attach(extract_document(path))
+                return self.evidence_tracker.attach(self.extraction_manager.extract(path))
             except ValueError as exc:
                 raise ExtractionError(str(exc)) from exc
 
