@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from sicav_checker.comparison.coverage import comparison_coverage, is_anomaly_status
+from sicav_checker.comparison.metrics import build_metric_breakdown, build_review_items
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.reporting.excel_report import write_excel_report
 
@@ -60,6 +61,8 @@ class JsonGenerator(ReportGenerator):
         output.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "summary": _summary(report),
+            "metrics": _metrics(report),
+            "review_items": _review_items(report),
             "documents": [_dump(item) for item in report.documents],
             "cross_year_checks": [_dump(item) for item in report.comparisons],
             "internal_validation": [_dump(item) for item in report.validations],
@@ -74,8 +77,16 @@ class JsonGenerator(ReportGenerator):
 
 
 def _report_tables(report: ComparisonReport) -> dict[str, list[dict[str, Any]]]:
+    review_items = _review_items(report)
     return {
         "Summary": _summary_rows(report),
+        "Metrics": _metric_rows(report),
+        "Financial Consistency": [item for item in review_items if item["status"] in {"carry_forward_ok", "LABEL_RENAMED", "OK"}],
+        "Extraction Issues": [item for item in review_items if item["status"] in {"parse_low_confidence", "LOW_CONFIDENCE_EXTRACTION"} or item.get("evidence_type") in {"low_confidence_parse", "review"}],
+        "Actual Mismatches": [item for item in review_items if item["status"] in {"carry_forward_mismatch", "MISMATCH"}],
+        "Missing Accounts": [item for item in review_items if item["status"] in {"missing_in_old_current", "missing_in_new_comparative", "MISSING_IN_OLD", "MISSING_IN_NEW"}],
+        "Duplicate Labels": [item for item in review_items if item["status"] == "duplicate_label"],
+        "Detailed Evidence": review_items,
         "Cross-Year Checks": [_dump(item) for item in report.comparisons],
         "Internal Validation": [_dump(item) for item in report.validations],
         "Rule Results": [_dump(item) for item in report.rule_results or _validation_rule_rows(report)],
@@ -88,7 +99,47 @@ def _report_tables(report: ComparisonReport) -> dict[str, list[dict[str, Any]]]:
     }
 
 
+def _metrics(report: ComparisonReport) -> dict[str, Any]:
+    docs = sorted(report.documents, key=lambda document: document.document_year or 0)
+    old_document = docs[0] if docs else None
+    new_document = docs[-1] if len(docs) > 1 else old_document
+    return build_metric_breakdown(old_document, new_document, report.comparisons, report.validations)
+
+
+def _review_items(report: ComparisonReport) -> list[dict[str, Any]]:
+    docs = sorted(report.documents, key=lambda document: document.document_year or 0)
+    old_document = docs[0] if docs else None
+    new_document = docs[-1] if len(docs) > 1 else old_document
+    return build_review_items(report.comparisons, old_document, new_document)
+
+
+def _metric_rows(report: ComparisonReport) -> list[dict[str, Any]]:
+    metrics = _metrics(report)
+    keys = [
+        "financial_consistency",
+        "financial_consistency_numerator",
+        "financial_consistency_denominator",
+        "extraction_coverage",
+        "extraction_coverage_numerator",
+        "extraction_coverage_denominator",
+        "structural_quality",
+        "actual_mismatches",
+        "missing_accounts",
+        "duplicate_labels",
+        "polluted_labels",
+        "critical_accounting_errors",
+        "extraction_confidence",
+    ]
+    rows = [{"Metric": key, "Value": metrics.get(key)} for key in keys]
+    rows.append({"Metric": "risk_category", "Value": metrics["risk"]["category"]})
+    rows.append({"Metric": "risk_rationale", "Value": metrics["risk"]["rationale"]})
+    rows.append({"Metric": "verdict", "Value": metrics["verdict"]["label"]})
+    rows.append({"Metric": "verdict_reason", "Value": metrics["verdict"]["reason"]})
+    return rows
+
+
 def _summary(report: ComparisonReport) -> dict[str, Any]:
+    metrics = _metrics(report)
     return {
         "documents": len(report.documents),
         "cross_year_checks": len(report.comparisons),
@@ -98,6 +149,12 @@ def _summary(report: ComparisonReport) -> dict[str, Any]:
         "missing_years": report.missing_years,
         "confidence": report.confidence.overall if report.confidence else None,
         **_coverage(report),
+        **{key: value for key, value in metrics.items() if key not in {"risk", "verdict", "why_verdict", "metric_debug"}},
+        "risk_category": metrics["risk"]["category"],
+        "risk_level": metrics["risk"]["level"],
+        "risk_rationale": metrics["risk"]["rationale"],
+        "verdict": metrics["verdict"]["label"],
+        "verdict_reason": metrics["verdict"]["reason"],
     }
 
 

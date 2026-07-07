@@ -1,4 +1,4 @@
-﻿export type Project = {
+export type Project = {
   id: string;
   name: string;
   company: string;
@@ -63,24 +63,90 @@ export type VerificationSummary = {
   missing_in_new?: number;
   ignored_lines?: number;
   comparison_coverage_percentage?: number;
+  financial_consistency?: number;
+  financial_consistency_numerator?: number;
+  financial_consistency_denominator?: number;
+  extraction_coverage?: number;
+  extraction_coverage_numerator?: number;
+  extraction_coverage_denominator?: number;
+  structural_quality?: number;
+  actual_mismatches?: number;
+  missing_in_old_current?: number;
+  missing_in_new_comparative?: number;
+  duplicate_labels?: number;
+  polluted_labels?: number;
+  low_confidence_parse?: number;
+  critical_accounting_errors?: number;
+  carry_forward_ok?: number;
+  carry_forward_mismatch?: number;
+  risk_level?: string;
+  risk_category?: string;
+  risk_rationale?: string;
+  verdict?: string;
+  verdict_reason?: string;
+  why_verdict?: {
+    verdict?: string;
+    reason?: string;
+    passed?: string[];
+    needs_review?: string[];
+    issue_type?: string;
+  };
+  metric_debug?: Record<string, unknown>;
+};
+
+export type EvidenceReference = {
+  page?: number | null;
+  section?: string | null;
+  raw_text?: string | null;
+  bounding_box?: number[] | null;
+  value?: number | null;
+  extraction_method?: string | null;
 };
 
 export type Anomaly = {
+  id?: string;
   pair: string;
   year: number;
   statement: string;
+  statement_name?: string;
   old_label?: string | null;
   new_label?: string | null;
+  account_label_old?: string | null;
+  account_label_new?: string | null;
   canonical_label: string;
   old_value?: number | null;
   new_value?: number | null;
+  old_current_value?: number | null;
+  old_previous_value?: number | null;
+  new_current_value?: number | null;
+  new_previous_value?: number | null;
+  expected_value?: number | null;
+  actual_value?: number | null;
   status: string;
   severity: string;
   delta?: number | null;
+  difference?: number | null;
+  difference_percent?: number | null;
   confidence: number;
+  explanation?: string;
+  technical_reason?: string;
+  accountant_reason?: string;
+  recommended_action?: string;
+  old_document_year?: number | null;
+  new_document_year?: number | null;
+  compared_year?: number | null;
+  old_page?: number | null;
+  new_page?: number | null;
+  old_section?: string | null;
+  new_section?: string | null;
+  old_line_text?: string | null;
+  new_line_text?: string | null;
+  extraction_engine?: string;
+  evidence_type?: string;
+  matching_method?: string;
   note?: string;
-  old_evidence?: string;
-  new_evidence?: string;
+  old_evidence?: EvidenceReference | string;
+  new_evidence?: EvidenceReference | string;
 };
 
 export type PaginatedAnomalies = {

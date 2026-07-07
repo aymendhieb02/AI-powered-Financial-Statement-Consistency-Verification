@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from sicav_checker.comparison.coverage import MISMATCH_STATUSES, MISSING_NEW_STATUSES, MISSING_OLD_STATUSES, is_anomaly_status, is_ok_status, comparison_coverage
+from sicav_checker.comparison.metrics import build_metric_breakdown, build_review_items, write_comparison_debug, write_metric_debug
 from sicav_checker.config import Settings, settings
 from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.exceptions import StorageError
@@ -211,20 +212,20 @@ class ProjectService:
     def _run_from_pipeline(self, project_id: str, result: PipelineResult) -> VerificationRunRecord:
         comparisons = result.comparisons
         validations = result.validations
-        non_ok = [item for item in comparisons if is_anomaly_status(item.status)]
-        critical = sum(1 for item in non_ok if item.severity == "CRITICAL")
-        medium = sum(1 for item in non_ok if item.severity == "MEDIUM")
-        low = sum(1 for item in non_ok if item.severity == "LOW")
-        risk_score = min(100, critical * 25 + medium * 10 + low * 3)
-        if critical == 0:
-            risk_score = min(risk_score, 80)
-        missing = sum(1 for item in comparisons if item.status in MISSING_NEW_STATUSES or item.status in MISSING_OLD_STATUSES)
+        docs = sorted(result.documents, key=lambda document: document.document_year or 0)
+        old_document = docs[0] if docs else None
+        new_document = docs[-1] if len(docs) > 1 else old_document
+        metrics = build_metric_breakdown(old_document, new_document, comparisons, validations)
+        review_items = build_review_items(comparisons, old_document, new_document)
+        anomalous_review_items = [item for item in review_items if item["status"] not in {"OK", "carry_forward_ok", "LABEL_RENAMED"}]
+
         years = [doc.document_year for doc in result.documents if doc.document_year is not None]
         old_year = min(years) if years else None
         new_year = max(years) if years else None
-        overall_confidence = self._overall_extraction_confidence(result.documents)
         company = next((doc.company for doc in result.documents if doc.company), "")
         coverage = self._coverage_summary(result)
+        risk = metrics["risk"]
+        verdict = metrics["verdict"]
         summary = {
             "company": company,
             "old_document_year": old_year,
@@ -232,23 +233,49 @@ class ProjectService:
             "compared_year": old_year,
             "documents_analyzed": len(result.documents),
             "pairs_checked": len({item.pair for item in comparisons}),
-            "values_checked": len(comparisons),
-            "ok_count": sum(1 for item in comparisons if is_ok_status(item.status)),
-            "mismatch_count": sum(1 for item in comparisons if item.status in MISMATCH_STATUSES),
-            "missing_count": missing,
-            "critical_anomalies": critical,
-            "medium_anomalies": medium,
-            "low_anomalies": low,
-            "overall_confidence": overall_confidence,
-            "risk_score": risk_score,
+            "values_checked": metrics["actually_compared_values"],
+            "ok_count": metrics["carry_forward_ok"],
+            "mismatch_count": metrics["actual_mismatches"],
+            "missing_count": metrics["missing_accounts"],
+            "critical_anomalies": metrics["critical_accounting_errors"],
+            "medium_anomalies": sum(1 for item in anomalous_review_items if item["severity"] == "MEDIUM"),
+            "low_anomalies": sum(1 for item in anomalous_review_items if item["severity"] == "LOW"),
+            "overall_confidence": metrics["extraction_confidence"],
+            "risk_score": risk["score"],
+            "risk_level": risk["level"],
+            "risk_category": risk["category"],
+            "risk_rationale": risk["rationale"],
+            "verdict": verdict["label"],
+            "verdict_reason": verdict["reason"],
+            "why_verdict": metrics["why_verdict"],
+            "financial_consistency": metrics["financial_consistency"],
+            "financial_consistency_numerator": metrics["financial_consistency_numerator"],
+            "financial_consistency_denominator": metrics["financial_consistency_denominator"],
+            "extraction_coverage": metrics["extraction_coverage"],
+            "extraction_coverage_numerator": metrics["extraction_coverage_numerator"],
+            "extraction_coverage_denominator": metrics["extraction_coverage_denominator"],
+            "structural_quality": metrics["structural_quality"],
+            "actual_mismatches": metrics["actual_mismatches"],
+            "missing_in_old_current": metrics["missing_in_old_current"],
+            "missing_in_new_comparative": metrics["missing_in_new_comparative"],
+            "duplicate_labels": metrics["duplicate_labels"],
+            "polluted_labels": metrics["polluted_labels"],
+            "low_confidence_parse": metrics["low_confidence_parse"],
+            "critical_accounting_errors": metrics["critical_accounting_errors"],
+            "carry_forward_ok": metrics["carry_forward_ok"],
+            "carry_forward_mismatch": metrics["carry_forward_mismatch"],
+            "metric_debug": metrics["metric_debug"],
             "report_paths": [str(path) for path in result.report_paths],
             **coverage,
         }
+        debug_dir = self.project_dir(project_id) / "debug"
+        write_metric_debug(debug_dir / "metric_debug.json", metrics, review_items)
+        write_comparison_debug(debug_dir / "comparison_debug.json", review_items)
         return VerificationRunRecord(
             project_id=project_id,
             summary=summary,
             report_paths=[str(path) for path in result.report_paths],
-            anomalies=[item.model_dump(mode="json") for item in non_ok],
+            anomalies=anomalous_review_items,
         )
 
     @staticmethod

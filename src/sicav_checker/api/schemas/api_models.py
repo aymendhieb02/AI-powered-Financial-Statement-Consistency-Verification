@@ -91,6 +91,29 @@ class VerificationSummary(BaseModel):
     missing_in_new: int = 0
     ignored_lines: int = 0
     comparison_coverage_percentage: float = 0
+    financial_consistency: float = 0
+    financial_consistency_numerator: int = 0
+    financial_consistency_denominator: int = 0
+    extraction_coverage: float = 0
+    extraction_coverage_numerator: int = 0
+    extraction_coverage_denominator: int = 0
+    structural_quality: float = 0
+    actual_mismatches: int = 0
+    missing_in_old_current: int = 0
+    missing_in_new_comparative: int = 0
+    duplicate_labels: int = 0
+    polluted_labels: int = 0
+    low_confidence_parse: int = 0
+    critical_accounting_errors: int = 0
+    carry_forward_ok: int = 0
+    carry_forward_mismatch: int = 0
+    risk_level: str = "LOW"
+    risk_category: str = "LOW"
+    risk_rationale: str = ""
+    verdict: str = "PASS"
+    verdict_reason: str = ""
+    why_verdict: dict = Field(default_factory=dict)
+    metric_debug: dict = Field(default_factory=dict)
 
 
 class PaginatedAnomalies(BaseModel):

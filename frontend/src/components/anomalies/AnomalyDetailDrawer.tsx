@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import type { Anomaly } from '../../types/api';
+import type { Anomaly, EvidenceReference } from '../../types/api';
 import { SeverityBadge, StatusBadge } from '../ui/Badge';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
@@ -43,8 +43,8 @@ export function AnomalyDetailDrawer({ anomaly, onClose }: { anomaly: Anomaly; on
           <Detail label="Difference %" value={percent(anomaly)} />
           <Detail label="Confidence" value={Math.round((anomaly.confidence ?? 0) * 100) + '%'} />
           <Detail label="Explanation" value={anomaly.note || 'Cross-year deterministic comparison'} />
-          <Detail label="Old document evidence" value={anomaly.old_evidence || 'Evidence not available for this anomaly.'} />
-          <Detail label="New document evidence" value={anomaly.new_evidence || 'Evidence not available for this anomaly.'} />
+          <Detail label="Old document evidence" value={evidenceText(anomaly.old_evidence)} />
+          <Detail label="New document evidence" value={evidenceText(anomaly.new_evidence)} />
         </div>
         {anomaly.note && (
           <Card className="mt-6 bg-slate-50 p-4">
@@ -64,4 +64,11 @@ function Detail({ label, value }: { label: string; value: string }) {
       <span className="max-w-[60%] text-right font-medium text-slate-900">{value}</span>
     </div>
   );
+}
+
+
+function evidenceText(evidence?: string | EvidenceReference) {
+  if (!evidence) return 'Evidence not available for this anomaly.';
+  if (typeof evidence === 'string') return evidence;
+  return evidence.raw_text || evidence.section || (evidence.page != null ? 'Page ' + evidence.page : 'Evidence metadata available.');
 }

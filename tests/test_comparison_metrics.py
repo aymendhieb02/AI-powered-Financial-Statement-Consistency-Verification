@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from sicav_checker.comparison.cross_year_comparator import compare_documents
+from sicav_checker.comparison.metrics import build_metric_breakdown, build_review_items, write_metric_debug
+from sicav_checker.domain.models import DocumentMetadata, FinancialDocument, FinancialStatement, Severity, StatementRow, Status
+
+
+def row(label: str, key: str, current: float | int | None = None, previous: float | int | None = None) -> StatementRow:
+    return StatementRow(label=label, canonical_label=key, current_value=current, previous_value=previous, confidence=0.9)
+
+
+def doc(year: int, rows: list[StatementRow]) -> FinancialDocument:
+    return FinancialDocument(metadata=DocumentMetadata(year=year, source_file=f"{year}.pdf", confidence=0.96), statements={"bilan": FinancialStatement(name="bilan", rows=rows)})
+
+
+def test_financial_consistency_is_100_when_compared_values_match_even_with_missing_rows() -> None:
+    old = doc(2024, [row("TOTAL ACTIF", "total_actif", current=100), row("ACTIF NET", "actif_net", current=80)])
+    new = doc(2025, [row("TOTAL ACTIF", "total_actif", current=110, previous=100)])
+    results = compare_documents(old, new)
+
+    metrics = build_metric_breakdown(old, new, results)
+
+    assert metrics["financial_consistency"] == 100
+    assert metrics["financial_consistency_denominator"] == 1
+    assert metrics["extraction_coverage"] < 100
+    assert metrics["missing_accounts"] == 1
+
+
+def test_risk_is_extraction_not_financial_when_no_mismatches_but_missing_rows() -> None:
+    old = doc(2024, [row("TOTAL ACTIF", "total_actif", current=100), row("ACTIF NET", "actif_net", current=80)])
+    new = doc(2025, [row("TOTAL ACTIF", "total_actif", current=110, previous=100)])
+    metrics = build_metric_breakdown(old, new, compare_documents(old, new))
+
+    assert metrics["actual_mismatches"] == 0
+    assert metrics["risk"]["category"] in {"MEDIUM_STRUCTURAL_RISK", "HIGH_EXTRACTION_RISK"}
+    assert metrics["verdict"]["label"] == "NEEDS REVIEW"
+
+
+def test_fail_only_for_actual_carry_forward_mismatch() -> None:
+    old = doc(2024, [row("TOTAL ACTIF", "total_actif", current=100)])
+    new = doc(2025, [row("TOTAL ACTIF", "total_actif", current=110, previous=90)])
+    metrics = build_metric_breakdown(old, new, compare_documents(old, new))
+
+    assert metrics["actual_mismatches"] == 1
+    assert metrics["verdict"]["label"] == "FAIL"
+    assert metrics["risk"]["category"] == "HIGH_FINANCIAL_RISK"
+
+
+def test_duplicate_label_detail_recommends_parent_context() -> None:
+    old = doc(2024, [row("Capital", "capital", current=1), row("Capital", "capital", current=2)])
+    new = doc(2025, [row("Capital", "capital", previous=1)])
+    results = compare_documents(old, new)
+    details = build_review_items(results, old, new)
+
+    duplicate = next(item for item in details if item["status"] == Status.DUPLICATE_LABEL.value)
+    assert "parent context" in duplicate["recommended_action"].lower()
+    assert duplicate["explanation"]
+
+
+def test_metric_debug_json_contains_formula_inputs(tmp_path: Path) -> None:
+    old = doc(2024, [row("TOTAL ACTIF", "total_actif", current=100)])
+    new = doc(2025, [row("TOTAL ACTIF", "total_actif", current=110, previous=100)])
+    results = compare_documents(old, new)
+    metrics = build_metric_breakdown(old, new, results)
+    details = build_review_items(results, old, new)
+    output = tmp_path / "metric_debug.json"
+
+    write_metric_debug(output, metrics, details)
+
+    content = output.read_text(encoding="utf-8")
+    assert "financial_consistency" in content
+    assert "exact_matches / actually_compared_values" in content
+
+
+def test_anomaly_detail_contains_values_explanation_and_action() -> None:
+    old = doc(2024, [row("TOTAL ACTIF", "total_actif", current=100)])
+    new = doc(2025, [row("TOTAL ACTIF", "total_actif", current=110, previous=90)])
+    details = build_review_items(compare_documents(old, new), old, new)
+
+    item = details[0]
+    assert item["expected_value"] == 100
+    assert item["actual_value"] == 90
+    assert item["difference"] == -10
+    assert item["explanation"]
+    assert item["recommended_action"]
