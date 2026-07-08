@@ -25,18 +25,23 @@ def compare_documents(old_doc: ExtractedDocument, new_doc: ExtractedDocument, to
     for statement_name in statements:
         old_statement = old_doc.statements.get(statement_name)
         new_statement = new_doc.statements.get(statement_name)
-        old_entries, old_duplicates = _dedupe_entries(statement_name, old_statement.rows if old_statement else [])
-        new_entries, new_duplicates = _dedupe_entries(statement_name, new_statement.rows if new_statement else [])
+        old_entries, old_duplicate_groups = _dedupe_entries(statement_name, old_statement.rows if old_statement else [])
+        new_entries, new_duplicate_groups = _dedupe_entries(statement_name, new_statement.rows if new_statement else [])
 
-        for duplicate in old_duplicates:
-            results.append(_duplicate_result(pair, old_doc.document_year, statement_name, duplicate, old_side=True))
-        for duplicate in new_duplicates:
-            results.append(_duplicate_result(pair, old_doc.document_year, statement_name, duplicate, old_side=False))
+        for duplicate_group in old_duplicate_groups.values():
+            results.append(_duplicate_result(pair, old_doc.document_year, statement_name, duplicate_group, old_side=True))
+        for duplicate_group in new_duplicate_groups.values():
+            results.append(_duplicate_result(pair, old_doc.document_year, statement_name, duplicate_group, old_side=False))
 
         new_by_key = {entry.key: entry for entry in new_entries}
         used_new: set[str] = set()
+        old_unique_keys = {entry.key for entry in old_entries}
+        old_duplicate_keys = set(old_duplicate_groups)
+        new_duplicate_keys = set(new_duplicate_groups)
 
         for old_entry in old_entries:
+            if old_entry.key in new_duplicate_keys:
+                continue
             matched_key, score, renamed = match_label(old_entry.key, [entry.key for entry in new_entries if entry.key not in used_new])
             new_entry = new_by_key.get(matched_key) if matched_key else None
             if new_entry:
@@ -44,7 +49,7 @@ def compare_documents(old_doc: ExtractedDocument, new_doc: ExtractedDocument, to
             results.append(_compare_entry(pair, old_doc.document_year, statement_name, old_entry, new_entry, tolerance, score, renamed))
 
         for new_entry in new_entries:
-            if new_entry.key in used_new or new_entry.key in {entry.key for entry in old_entries}:
+            if new_entry.key in used_new or new_entry.key in old_unique_keys or new_entry.key in old_duplicate_keys:
                 continue
             results.append(_missing_old_result(pair, old_doc.document_year, statement_name, new_entry))
 
@@ -52,20 +57,16 @@ def compare_documents(old_doc: ExtractedDocument, new_doc: ExtractedDocument, to
     return results
 
 
-def _dedupe_entries(statement_name: str, rows: list[StatementRow]) -> tuple[list[RowEntry], list[RowEntry]]:
-    seen: set[str] = set()
-    unique: list[RowEntry] = []
-    duplicates: list[RowEntry] = []
+def _dedupe_entries(statement_name: str, rows: list[StatementRow]) -> tuple[list[RowEntry], dict[str, list[RowEntry]]]:
+    grouped: dict[str, list[RowEntry]] = {}
     for row in rows:
         key = _canonical_key(statement_name, row)
         if not row.canonical_label:
             row.canonical_label = key
-        entry = RowEntry(key=key, row=row)
-        if key in seen:
-            duplicates.append(entry)
-        else:
-            seen.add(key)
-            unique.append(entry)
+        grouped.setdefault(key, []).append(RowEntry(key=key, row=row))
+
+    unique = [entries[0] for entries in grouped.values() if len(entries) == 1]
+    duplicates = {key: entries for key, entries in grouped.items() if len(entries) > 1}
     return unique, duplicates
 
 
@@ -150,23 +151,25 @@ def _missing_old_result(pair: str, year: int, statement_name: str, new_entry: Ro
     )
 
 
-def _duplicate_result(pair: str, year: int, statement_name: str, entry: RowEntry, old_side: bool) -> ComparisonResult:
-    row = entry.row
+def _duplicate_result(pair: str, year: int, statement_name: str, entries: list[RowEntry], old_side: bool) -> ComparisonResult:
+    primary = entries[0].row
+    candidate_evidence = [entry.row.evidence for entry in entries if entry.row.evidence is not None]
     return ComparisonResult(
         pair=pair,
         year=year,
         statement=statement_name,
-        old_label=row.label if old_side else None,
-        new_label=None if old_side else row.label,
-        canonical_label=entry.key,
-        old_value=row.current_value if old_side else None,
-        new_value=None if old_side else row.previous_value,
+        old_label=primary.label if old_side else None,
+        new_label=None if old_side else primary.label,
+        canonical_label=entries[0].key,
+        old_value=primary.current_value if old_side else None,
+        new_value=None if old_side else primary.previous_value,
         status=Status.DUPLICATE_LABEL,
-        severity=classify_severity(entry.key, Status.DUPLICATE_LABEL),
-        confidence=row.confidence,
-        note="Duplicate canonical label detected; not used to inflate carry-forward coverage.",
-        old_evidence=row.evidence if old_side else None,
-        new_evidence=None if old_side else row.evidence,
+        severity=classify_severity(entries[0].key, Status.DUPLICATE_LABEL),
+        confidence=primary.confidence,
+        note="Duplicate canonical label detected; not used in deterministic comparison.",
+        old_evidence=primary.evidence if old_side else None,
+        new_evidence=None if old_side else primary.evidence,
+        duplicate_candidates=candidate_evidence,
         matching_method="duplicate_label",
     )
 

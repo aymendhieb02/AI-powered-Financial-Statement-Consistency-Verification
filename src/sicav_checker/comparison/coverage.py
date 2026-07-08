@@ -42,9 +42,7 @@ def comparison_coverage(old_document: FinancialDocument, new_document: Financial
     matched_keys = {
         (item.statement, item.canonical_label)
         for item in comparisons
-        if item.old_label is not None
-        and item.new_label is not None
-        and item.status not in DUPLICATE_STATUSES
+        if (item.old_label is not None and item.new_label is not None) or item.status in DUPLICATE_STATUSES
     }
     denominator = len(expected_keys)
     coverage = round((len(matched_keys) / denominator) * 100, 2) if denominator else 0.0

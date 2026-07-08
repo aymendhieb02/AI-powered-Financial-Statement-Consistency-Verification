@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Download, FileJson, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+﻿import { AlertTriangle, CheckCircle2, ClipboardCheck, Download, FileJson, FileSearch, Scale, ShieldCheck } from 'lucide-react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { excelReportUrl, jsonReportUrl } from '../api/reports';
 import { getVerification } from '../api/verification';
@@ -120,3 +120,5 @@ function formatConfidence(confidence?: number) {
 function Fact({ label, value }: { label: string; value: string | number }) {
   return <div><div className="text-slate-500">{label}</div><div className="mt-1 font-semibold text-slate-950">{value}</div></div>;
 }
+
+

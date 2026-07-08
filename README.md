@@ -97,7 +97,7 @@ Backend:
 
 ```powershell
 python -m venv .venv
-.venv\Scriptsctivate
+.venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn sicav_checker.api.main:app --reload
 ```

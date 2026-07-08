@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,96 @@ class VerificationRunResponse(BaseModel):
     status: str
 
 
+class EvidenceReferenceModel(BaseModel):
+    document_id: str | None = None
+    source_pdf: str | None = None
+    page: int | None = None
+    statement_name: str | None = None
+    section_name: str | None = None
+    raw_text: str | None = None
+    normalized_line: str | None = None
+    label_text: str | None = None
+    value_text_current: str | None = None
+    value_text_previous: str | None = None
+    current_value: float | int | None = None
+    previous_value: float | int | None = None
+    bounding_box: list[float] | None = None
+    bbox_label: list[float] | None = None
+    bbox_current: list[float] | None = None
+    bbox_previous: list[float] | None = None
+    bbox_row: list[float] | None = None
+    extraction_method: str | None = None
+    confidence: float | None = None
+
+
+class ComparisonEvidenceModel(BaseModel):
+    id: str
+    pair: str = ""
+    year: int | None = None
+    statement: str = ""
+    statement_name: str = ""
+    page: int | None = None
+    section: str | None = None
+    canonical_label: str
+    hierarchy_path: str | None = None
+    status: str
+    severity: str
+    old_label: str | None = None
+    new_label: str | None = None
+    account_label_old: str | None = None
+    account_label_new: str | None = None
+    old_value: float | int | None = None
+    new_value: float | int | None = None
+    old_current_value: float | int | None = None
+    new_previous_value: float | int | None = None
+    expected_value: float | int | None = None
+    actual_value: float | int | None = None
+    difference: float | int | None = None
+    difference_percent: float | None = None
+    confidence: float = 0
+    old_page: int | None = None
+    new_page: int | None = None
+    old_section: str | None = None
+    new_section: str | None = None
+    old_raw_line: str | None = None
+    new_raw_line: str | None = None
+    old_bbox: list[float] | None = None
+    new_bbox: list[float] | None = None
+    explanation: str = ""
+    technical_reason: str = ""
+    accountant_reason: str = ""
+    recommended_action: str = ""
+    reason: str = ""
+    issue_type: str = "ok"
+    evidence_type: str | None = None
+    issue_classification: str | None = None
+    status_group: str | None = None
+    old_document_id: str | None = None
+    new_document_id: str | None = None
+    old_evidence: EvidenceReferenceModel | dict | str | None = None
+    new_evidence: EvidenceReferenceModel | dict | str | None = None
+    duplicate_candidates: list[EvidenceReferenceModel | dict] = Field(default_factory=list)
+
+
+class EvidenceListResponse(BaseModel):
+    items: list[ComparisonEvidenceModel] = Field(default_factory=list)
+    total: int = 0
+
+
+class DocumentPageResponse(BaseModel):
+    document_id: str
+    page_number: int
+    source_file: str
+    file_url: str
+    image_url: str | None = None
+    page_width: float | None = None
+    page_height: float | None = None
+    statement: str | None = None
+    section: str | None = None
+    raw_line: str | None = None
+    bounding_box: list[float] | None = None
+
+
 class VerificationSummary(BaseModel):
     run_id: str
     status: str
@@ -103,10 +193,23 @@ class VerificationSummary(BaseModel):
     missing_in_new_comparative: int = 0
     duplicate_labels: int = 0
     polluted_labels: int = 0
+    merged_rows: int = 0
+    hierarchy_gaps: int = 0
     low_confidence_parse: int = 0
     critical_accounting_errors: int = 0
     carry_forward_ok: int = 0
     carry_forward_mismatch: int = 0
+    extraction_confidence: float = 0
+    accounting_health: dict = Field(default_factory=dict)
+    extraction_status: str = "FAILED"
+    extraction_reason: str = ""
+    extraction_summary: dict = Field(default_factory=dict)
+    comparison_status: str = "FAILED"
+    comparison_reason: str = ""
+    comparison_summary: dict = Field(default_factory=dict)
+    accounting_status: str = "UNKNOWN"
+    accounting_reason: str = ""
+    accounting_summary: dict = Field(default_factory=dict)
     risk_level: str = "LOW"
     risk_category: str = "LOW"
     risk_rationale: str = ""

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from sicav_checker.assessment.decision_engine import build_decision_summary
 from sicav_checker.comparison.coverage import comparison_coverage, is_anomaly_status
 from sicav_checker.comparison.metrics import build_metric_breakdown, build_review_items
 from sicav_checker.domain.models import ComparisonReport
@@ -78,15 +79,30 @@ class JsonGenerator(ReportGenerator):
 
 def _report_tables(report: ComparisonReport) -> dict[str, list[dict[str, Any]]]:
     review_items = _review_items(report)
+    decisions = _decisions(report)
     return {
         "Summary": _summary_rows(report),
+        "Extraction Summary": _status_rows("Extraction", decisions["extraction"]),
+        "Comparison Summary": _status_rows("Comparison", decisions["comparison"]),
+        "Accounting Summary": _status_rows("Accounting", decisions["accounting"]),
         "Metrics": _metric_rows(report),
         "Financial Consistency": [item for item in review_items if item["status"] in {"carry_forward_ok", "LABEL_RENAMED", "OK"}],
-        "Extraction Issues": [item for item in review_items if item["status"] in {"parse_low_confidence", "LOW_CONFIDENCE_EXTRACTION"} or item.get("evidence_type") in {"low_confidence_parse", "review"}],
-        "Actual Mismatches": [item for item in review_items if item["status"] in {"carry_forward_mismatch", "MISMATCH"}],
+        "Extraction Coverage": [
+            {
+                "paired_accounts": _metrics(report)["extraction_coverage_numerator"],
+                "expected_accounts": _metrics(report)["extraction_coverage_denominator"],
+                "percentage": _metrics(report)["extraction_coverage"],
+            }
+        ],
+        "Structural Issues": [
+            item for item in review_items if item.get("issue_classification") in {"structural_extraction_issue", "polluted_label", "extraction_issue"}
+        ],
+        "Accounting Issues": [item for item in review_items if item.get("issue_classification") == "accounting_issue"],
+        "Carry-Forward": [item for item in review_items if item["status"] in {"carry_forward_ok", "carry_forward_mismatch"}],
+        "Duplicates": [item for item in review_items if item["status"] == "duplicate_label"],
         "Missing Accounts": [item for item in review_items if item["status"] in {"missing_in_old_current", "missing_in_new_comparative", "MISSING_IN_OLD", "MISSING_IN_NEW"}],
-        "Duplicate Labels": [item for item in review_items if item["status"] == "duplicate_label"],
         "Detailed Evidence": review_items,
+        "Appendix": [_matching_row(item) for item in report.comparisons],
         "Cross-Year Checks": [_dump(item) for item in report.comparisons],
         "Internal Validation": [_dump(item) for item in report.validations],
         "Rule Results": [_dump(item) for item in report.rule_results or _validation_rule_rows(report)],
@@ -113,8 +129,13 @@ def _review_items(report: ComparisonReport) -> list[dict[str, Any]]:
     return build_review_items(report.comparisons, old_document, new_document)
 
 
+def _decisions(report: ComparisonReport) -> dict[str, Any]:
+    return build_decision_summary(sorted(report.documents, key=lambda document: document.document_year or 0), _metrics(report), report.validations)
+
+
 def _metric_rows(report: ComparisonReport) -> list[dict[str, Any]]:
     metrics = _metrics(report)
+    decisions = _decisions(report)
     keys = [
         "financial_consistency",
         "financial_consistency_numerator",
@@ -127,19 +148,27 @@ def _metric_rows(report: ComparisonReport) -> list[dict[str, Any]]:
         "missing_accounts",
         "duplicate_labels",
         "polluted_labels",
+        "merged_rows",
+        "hierarchy_gaps",
         "critical_accounting_errors",
         "extraction_confidence",
     ]
     rows = [{"Metric": key, "Value": metrics.get(key)} for key in keys]
+    rows.append({"Metric": "accounting_health", "Value": metrics["accounting_health"]["label"]})
+    rows.append({"Metric": "accounting_health_reason", "Value": metrics["accounting_health"]["reason"]})
+    rows.append({"Metric": "extraction_status", "Value": decisions["extraction"]["status"]})
+    rows.append({"Metric": "comparison_status", "Value": decisions["comparison"]["status"]})
+    rows.append({"Metric": "accounting_status", "Value": decisions["accounting"]["status"]})
     rows.append({"Metric": "risk_category", "Value": metrics["risk"]["category"]})
     rows.append({"Metric": "risk_rationale", "Value": metrics["risk"]["rationale"]})
-    rows.append({"Metric": "verdict", "Value": metrics["verdict"]["label"]})
-    rows.append({"Metric": "verdict_reason", "Value": metrics["verdict"]["reason"]})
+    rows.append({"Metric": "verdict", "Value": decisions["overall"]["status"]})
+    rows.append({"Metric": "verdict_reason", "Value": decisions["overall"]["reason"]})
     return rows
 
 
 def _summary(report: ComparisonReport) -> dict[str, Any]:
     metrics = _metrics(report)
+    decisions = _decisions(report)
     return {
         "documents": len(report.documents),
         "cross_year_checks": len(report.comparisons),
@@ -150,11 +179,20 @@ def _summary(report: ComparisonReport) -> dict[str, Any]:
         "confidence": report.confidence.overall if report.confidence else None,
         **_coverage(report),
         **{key: value for key, value in metrics.items() if key not in {"risk", "verdict", "why_verdict", "metric_debug"}},
+        "extraction_status": decisions["extraction"]["status"],
+        "extraction_reason": decisions["extraction"]["reason"],
+        "extraction_summary": decisions["extraction"]["summary"],
+        "comparison_status": decisions["comparison"]["status"],
+        "comparison_reason": decisions["comparison"]["reason"],
+        "comparison_summary": decisions["comparison"]["summary"],
+        "accounting_status": decisions["accounting"]["status"],
+        "accounting_reason": decisions["accounting"]["reason"],
+        "accounting_summary": decisions["accounting"]["summary"],
         "risk_category": metrics["risk"]["category"],
         "risk_level": metrics["risk"]["level"],
         "risk_rationale": metrics["risk"]["rationale"],
-        "verdict": metrics["verdict"]["label"],
-        "verdict_reason": metrics["verdict"]["reason"],
+        "verdict": decisions["overall"]["status"],
+        "verdict_reason": decisions["overall"]["reason"],
     }
 
 
@@ -211,3 +249,12 @@ def _dump(model: Any) -> dict[str, Any]:
     if model is None:
         return {}
     return model.model_dump(mode="json") if hasattr(model, "model_dump") else dict(model)
+
+def _status_rows(name: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = [
+        {"Engine": name, "Field": "status", "Value": payload.get("status")},
+        {"Engine": name, "Field": "reason", "Value": payload.get("reason")},
+    ]
+    for key, value in payload.get("summary", {}).items():
+        rows.append({"Engine": name, "Field": key, "Value": value})
+    return rows

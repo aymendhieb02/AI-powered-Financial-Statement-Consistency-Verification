@@ -3,6 +3,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { AdvancedPage } from './pages/AdvancedPage';
 import { AnomaliesPage } from './pages/AnomaliesPage';
 import { CompareDocumentsPage } from './pages/CompareDocumentsPage';
+import { EvidenceReviewPage } from './pages/EvidenceReviewPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ResultsPage } from './pages/ResultsPage';
 
@@ -15,6 +16,7 @@ const router = createBrowserRouter([
       { path: 'compare', element: <CompareDocumentsPage /> },
       { path: 'results/:runId', element: <ResultsPage /> },
       { path: 'anomalies/:runId', element: <AnomaliesPage /> },
+      { path: 'evidence/:runId/:evidenceId', element: <EvidenceReviewPage /> },
       { path: 'reports/:runId', element: <ReportsPage /> },
       { path: 'advanced', element: <AdvancedPage /> },
       { path: 'projects', element: <Navigate to="/compare" replace /> },

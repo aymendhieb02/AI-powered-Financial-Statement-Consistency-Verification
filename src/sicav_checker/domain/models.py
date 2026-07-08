@@ -55,15 +55,28 @@ class DocumentMetadata(BaseModel):
 
 class Evidence(BaseModel):
     line_id: str = ""
+    document_id: str = ""
     source_pdf: str = ""
     page: int | None = None
+    statement_name: str | None = None
+    section_name: str | None = None
     bounding_box: tuple[float, float, float, float] | None = None
+    bbox_label: tuple[float, float, float, float] | None = None
+    bbox_current: tuple[float, float, float, float] | None = None
+    bbox_previous: tuple[float, float, float, float] | None = None
+    bbox_row: tuple[float, float, float, float] | None = None
     table_id: str | None = None
     row_number: int | None = None
     column: str | None = None
     extraction_method: str = "unknown"
     raw_text: str = ""
+    normalized_line: str = ""
+    label_text: str = ""
+    value_text_current: str | None = None
+    value_text_previous: str | None = None
     normalized_value: float | int | None = None
+    current_value: float | int | None = None
+    previous_value: float | int | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
@@ -198,6 +211,38 @@ class Anomaly(BaseModel):
     line_label: str | None = None
 
 
+class ComparisonEvidence(BaseModel):
+    id: str
+    status: str
+    severity: str
+    statement_name: str
+    canonical_label: str
+    old_label: str | None = None
+    new_label: str | None = None
+    old_value: float | int | None = None
+    new_value: float | int | None = None
+    expected_value: float | int | None = None
+    actual_value: float | int | None = None
+    difference: float | int | None = None
+    difference_percent: float | None = None
+    old_page: int | None = None
+    new_page: int | None = None
+    old_section: str | None = None
+    new_section: str | None = None
+    old_raw_line: str | None = None
+    new_raw_line: str | None = None
+    old_bbox: tuple[float, float, float, float] | None = None
+    new_bbox: tuple[float, float, float, float] | None = None
+    explanation: str = ""
+    technical_reason: str = ""
+    accountant_reason: str = ""
+    recommended_action: str = ""
+    issue_type: str = "ok"
+    old_document_id: str | None = None
+    new_document_id: str | None = None
+    duplicate_candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ComparisonResult(BaseModel):
     pair: str
     year: int
@@ -215,6 +260,7 @@ class ComparisonResult(BaseModel):
     anomaly: Anomaly | None = None
     old_evidence: Evidence | None = None
     new_evidence: Evidence | None = None
+    duplicate_candidates: list[Evidence] = Field(default_factory=list)
     matching_method: str = "unknown"
 
 
@@ -272,8 +318,6 @@ class ValidationResult(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     execution_time: float = 0.0
     page: int | None = None
-
-
 
 
 class ReportResult(BaseModel):

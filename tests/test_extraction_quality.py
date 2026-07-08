@@ -1,6 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from sicav_checker.extraction.quality import score_extraction
+from sicav_checker.extraction.quality import pollution_reasons, score_extraction
 from sicav_checker.models import ExtractedDocument, Statement, StatementRow
 
 
@@ -58,3 +58,11 @@ def test_extraction_quality_scores_thin_polluted_document_low() -> None:
     assert report.polluted_label_count >= 2
     assert report.numeric_population_rate < 0.2
     assert report.score < 0.45
+
+
+def test_pollution_reasons_are_explicit() -> None:
+    reasons = pollution_reasons("BILAN ARRETE AU 31 DECEMBRE 2025 Note Année 2025 Portefeuille-titres")
+
+    assert "contains_header" in reasons
+    assert "contains_year" in reasons
+    assert "contains_note_title" in reasons

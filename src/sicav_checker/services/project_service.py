@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import json
 import shutil
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from sicav_checker.comparison.coverage import MISMATCH_STATUSES, MISSING_NEW_STATUSES, MISSING_OLD_STATUSES, is_anomaly_status, is_ok_status, comparison_coverage
+from sicav_checker.assessment.decision_engine import build_decision_summary
+from sicav_checker.comparison.coverage import comparison_coverage
 from sicav_checker.comparison.metrics import build_metric_breakdown, build_review_items, write_comparison_debug, write_metric_debug
 from sicav_checker.config import Settings, settings
-from sicav_checker.domain.models import ComparisonReport
 from sicav_checker.exceptions import StorageError
 from sicav_checker.normalization.year_detector import detect_year_from_filename
 from sicav_checker.pipeline.orchestrator import PipelineOrchestrator, PipelineResult
@@ -42,6 +43,7 @@ class VerificationRunRecord(BaseModel):
     summary: dict = Field(default_factory=dict)
     report_paths: list[str] = Field(default_factory=list)
     anomalies: list[dict] = Field(default_factory=list)
+    evidence_items: list[dict] = Field(default_factory=list)
 
 
 class ProjectService:
@@ -106,6 +108,20 @@ class ProjectService:
                 )
             )
         return documents
+
+    def get_document(self, project_id: str, document_id: str) -> UploadedDocumentRecord:
+        safe_name = Path(document_id).name
+        for document in self.list_documents(project_id):
+            if document.filename == safe_name:
+                return document
+        raise StorageError(f"Document not found: {safe_name}")
+
+    def get_document_path(self, project_id: str, document_id: str) -> Path:
+        document = self.get_document(project_id, document_id)
+        path = Path(document.path)
+        if not path.exists():
+            raise StorageError(f"Document file not found: {document.filename}")
+        return path
 
     def run_verification(
         self,
@@ -182,6 +198,110 @@ class ProjectService:
             raise StorageError(f"Verification run not found: {run_id}")
         return VerificationRunRecord(**json.loads(path.read_text(encoding="utf-8")))
 
+    def list_evidence(self, project_id: str, run_id: str) -> list[dict]:
+        run = self.get_run(project_id, run_id)
+        if run.evidence_items:
+            return run.evidence_items
+        if run.anomalies:
+            return run.anomalies
+        return []
+
+    def get_evidence(self, project_id: str, run_id: str, evidence_id: str) -> dict:
+        for item in self.list_evidence(project_id, run_id):
+            if item.get("id") == evidence_id:
+                return item
+        raise StorageError(f"Evidence item not found: {evidence_id}")
+
+    def get_document_page(self, project_id: str, document_id: str, page_number: int, evidence: dict | None = None) -> dict:
+        document = self.get_document(project_id, document_id)
+        path = self.get_document_path(project_id, document_id)
+        safe_document = urllib.parse.quote(document.filename)
+        payload = {
+            "document_id": document.filename,
+            "page_number": page_number,
+            "source_file": str(path),
+            "file_url": f"/api/projects/{project_id}/documents/{safe_document}/file",
+            "image_url": f"/api/projects/{project_id}/documents/{safe_document}/pages/{page_number}/image",
+            "page_width": None,
+            "page_height": None,
+            "statement": None,
+            "section": None,
+            "raw_line": None,
+            "bounding_box": None,
+        }
+        page_width, page_height = self.get_document_page_dimensions(project_id, document_id, page_number)
+        payload["page_width"] = page_width
+        payload["page_height"] = page_height
+        if evidence:
+            is_old = Path(document_id).name == Path(evidence.get("old_document_id") or "").name
+            is_new = Path(document_id).name == Path(evidence.get("new_document_id") or "").name
+            old_evidence = evidence.get("old_evidence") or {}
+            new_evidence = evidence.get("new_evidence") or {}
+            if is_old:
+                payload.update(
+                    {
+                        "statement": evidence.get("statement_name") or evidence.get("statement") or old_evidence.get("statement_name"),
+                        "section": evidence.get("old_section") or old_evidence.get("section_name"),
+                        "raw_line": evidence.get("old_raw_line") or old_evidence.get("raw_text"),
+                        "bounding_box": evidence.get("old_bbox") or old_evidence.get("bbox_row") or old_evidence.get("bounding_box"),
+                    }
+                )
+            elif is_new:
+                payload.update(
+                    {
+                        "statement": evidence.get("statement_name") or evidence.get("statement") or new_evidence.get("statement_name"),
+                        "section": evidence.get("new_section") or new_evidence.get("section_name"),
+                        "raw_line": evidence.get("new_raw_line") or new_evidence.get("raw_text"),
+                        "bounding_box": evidence.get("new_bbox") or new_evidence.get("bbox_row") or new_evidence.get("bounding_box"),
+                    }
+                )
+        return payload
+
+    def get_document_page_dimensions(self, project_id: str, document_id: str, page_number: int) -> tuple[float, float]:
+        path = self.get_document_path(project_id, document_id)
+        try:
+            import fitz
+        except ImportError as exc:
+            raise StorageError("PyMuPDF is required for document page preview.") from exc
+        try:
+            with fitz.open(path) as pdf:
+                if page_number < 1 or page_number > len(pdf):
+                    raise StorageError(f"Page {page_number} not found in {Path(document_id).name}")
+                page = pdf[page_number - 1]
+                rect = page.rect
+                return float(rect.width), float(rect.height)
+        except StorageError:
+            raise
+        except Exception as exc:
+            raise StorageError(f"Could not inspect page {page_number} in {Path(document_id).name}: {exc}") from exc
+
+    def render_document_page_image(self, project_id: str, document_id: str, page_number: int, scale: float = 2.0) -> bytes:
+        path = self.get_document_path(project_id, document_id)
+        cache_dir = self.project_dir(project_id) / "cache" / "page_images"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_name = f"{Path(document_id).stem}_page_{page_number}_scale_{str(scale).replace('.', '_')}.png"
+        cache_path = cache_dir / cache_name
+        if cache_path.exists():
+            return cache_path.read_bytes()
+        try:
+            import fitz
+        except ImportError as exc:
+            raise StorageError("PyMuPDF is required for page image rendering.") from exc
+        try:
+            with fitz.open(path) as pdf:
+                if page_number < 1 or page_number > len(pdf):
+                    raise StorageError(f"Page {page_number} not found in {Path(document_id).name}")
+                page = pdf[page_number - 1]
+                matrix = fitz.Matrix(scale, scale)
+                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                png = pix.tobytes("png")
+                cache_path.write_bytes(png)
+                return png
+        except StorageError:
+            raise
+        except Exception as exc:
+            raise StorageError(f"Could not render page {page_number} in {Path(document_id).name}: {exc}") from exc
+
     def project_dir(self, project_id: str) -> Path:
         return self.root_dir / project_id
 
@@ -225,7 +345,11 @@ class ProjectService:
         company = next((doc.company for doc in result.documents if doc.company), "")
         coverage = self._coverage_summary(result)
         risk = metrics["risk"]
-        verdict = metrics["verdict"]
+        decisions = build_decision_summary(docs, metrics, validations)
+        extraction = decisions["extraction"]
+        comparison = decisions["comparison"]
+        accounting = decisions["accounting"]
+        overall = decisions["overall"]
         summary = {
             "company": company,
             "old_document_year": old_year,
@@ -241,13 +365,24 @@ class ProjectService:
             "medium_anomalies": sum(1 for item in anomalous_review_items if item["severity"] == "MEDIUM"),
             "low_anomalies": sum(1 for item in anomalous_review_items if item["severity"] == "LOW"),
             "overall_confidence": metrics["extraction_confidence"],
+            "extraction_confidence": metrics["extraction_confidence"],
+            "accounting_health": metrics["accounting_health"],
             "risk_score": risk["score"],
             "risk_level": risk["level"],
             "risk_category": risk["category"],
             "risk_rationale": risk["rationale"],
-            "verdict": verdict["label"],
-            "verdict_reason": verdict["reason"],
-            "why_verdict": metrics["why_verdict"],
+            "extraction_status": extraction["status"],
+            "extraction_reason": extraction["reason"],
+            "extraction_summary": extraction["summary"],
+            "comparison_status": comparison["status"],
+            "comparison_reason": comparison["reason"],
+            "comparison_summary": comparison["summary"],
+            "accounting_status": accounting["status"],
+            "accounting_reason": accounting["reason"],
+            "accounting_summary": accounting["summary"],
+            "verdict": overall["status"],
+            "verdict_reason": overall["reason"],
+            "why_verdict": decisions["why_verdict"],
             "financial_consistency": metrics["financial_consistency"],
             "financial_consistency_numerator": metrics["financial_consistency_numerator"],
             "financial_consistency_denominator": metrics["financial_consistency_denominator"],
@@ -260,6 +395,8 @@ class ProjectService:
             "missing_in_new_comparative": metrics["missing_in_new_comparative"],
             "duplicate_labels": metrics["duplicate_labels"],
             "polluted_labels": metrics["polluted_labels"],
+            "merged_rows": metrics["merged_rows"],
+            "hierarchy_gaps": metrics["hierarchy_gaps"],
             "low_confidence_parse": metrics["low_confidence_parse"],
             "critical_accounting_errors": metrics["critical_accounting_errors"],
             "carry_forward_ok": metrics["carry_forward_ok"],
@@ -276,6 +413,7 @@ class ProjectService:
             summary=summary,
             report_paths=[str(path) for path in result.report_paths],
             anomalies=anomalous_review_items,
+            evidence_items=review_items,
         )
 
     @staticmethod

@@ -95,12 +95,27 @@ export type VerificationSummary = {
 };
 
 export type EvidenceReference = {
+  document_id?: string | null;
+  source_pdf?: string | null;
   page?: number | null;
+  statement_name?: string | null;
+  section_name?: string | null;
   section?: string | null;
   raw_text?: string | null;
-  bounding_box?: number[] | null;
+  normalized_line?: string | null;
+  label_text?: string | null;
+  value_text_current?: string | null;
+  value_text_previous?: string | null;
+  current_value?: number | null;
+  previous_value?: number | null;
   value?: number | null;
   extraction_method?: string | null;
+  confidence?: number | null;
+  bounding_box?: number[] | null;
+  bbox_label?: number[] | null;
+  bbox_current?: number[] | null;
+  bbox_previous?: number[] | null;
+  bbox_row?: number[] | null;
 };
 
 export type Anomaly = {
@@ -123,6 +138,7 @@ export type Anomaly = {
   expected_value?: number | null;
   actual_value?: number | null;
   status: string;
+  status_group?: string;
   severity: string;
   delta?: number | null;
   difference?: number | null;
@@ -178,3 +194,35 @@ export type Health = {
 };
 
 export type ApiError = { detail?: string; message?: string };
+
+export type ComparisonEvidence = Anomaly & {
+  hierarchy_path?: string | null;
+  issue_type?: string;
+  issue_classification?: string | null;
+  old_raw_line?: string | null;
+  new_raw_line?: string | null;
+  old_bbox?: number[] | null;
+  new_bbox?: number[] | null;
+  old_document_id?: string | null;
+  new_document_id?: string | null;
+  duplicate_candidates?: EvidenceReference[];
+};
+
+export type EvidenceListResponse = {
+  items: ComparisonEvidence[];
+  total: number;
+};
+
+export type DocumentPageResponse = {
+  document_id: string;
+  page_number: number;
+  source_file: string;
+  file_url: string;
+  image_url?: string | null;
+  page_width?: number | null;
+  page_height?: number | null;
+  statement?: string | null;
+  section?: string | null;
+  raw_line?: string | null;
+  bounding_box?: number[] | null;
+};

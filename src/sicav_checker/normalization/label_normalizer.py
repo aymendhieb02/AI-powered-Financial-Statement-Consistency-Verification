@@ -34,6 +34,10 @@ ALIASES = {
     "revenus_prises_en_pensions": "revenus_prises_pension",
     "revenus_prises_en_pension": "revenus_prises_pension",
     "sommes_distribuables_exercice": "sommes_distribuables_exercice",
+    "rafa_c_gularisation_sommes_non_distribuables": "regularisation_sommes_non_distribuables",
+    "rafa_c_gularisation_sommes_distribuables": "regularisation_sommes_distribuables",
+    "ra_c_gularisation_sommes_non_distribuables": "regularisation_sommes_non_distribuables",
+    "ra_c_gularisation_sommes_distribuables": "regularisation_sommes_distribuables",
 }
 
 HEADER_PREFIX_PATTERNS = (

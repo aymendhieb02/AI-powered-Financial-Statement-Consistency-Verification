@@ -1,11 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from sicav_checker.core.logging import logger
-from sicav_checker.extraction.layout_section_extractor import extract_layout_sections
+from sicav_checker.domain.models import Evidence
+from sicav_checker.extraction.layout_section_extractor import VisualLine, extract_layout_sections, extract_layout_sections_with_metadata
 from sicav_checker.extraction.ocr_fallback import extract_with_ocr
 from sicav_checker.extraction.section_detector import SECTION_ORDER, candidate_heading_lines, detect_sections
 from sicav_checker.extraction.text_extractor import extract_text
@@ -71,6 +73,7 @@ HEADER_PREFIX_PATTERNS = (
     re.compile(r"^\s*(?:ACTIF|PASSIF)\s+Note\s+(?:(?:\d{1,2}/\d{1,2}/\d{2,4})\s*){1,4}", re.IGNORECASE),
     re.compile(r"^\s*Note\s+(?:Ann\S*e\s+\d{4}\s*){1,4}", re.IGNORECASE),
     re.compile(r"^\s*Ann\S*e\s+\d{4}(?:\s+Ann\S*e\s+\d{4})*\s*", re.IGNORECASE),
+    re.compile(r"^\s*Page\s+\d+\s*", re.IGNORECASE),
     re.compile(r"^\s*DES\s+OPERATIONS\s+D['\u2019]?\s*EXPLOITATION\s*", re.IGNORECASE),
 )
 
@@ -83,10 +86,11 @@ class ParsedCandidate:
     score: int
 
 
+
 def extract_document(path: str | Path) -> ExtractedDocument:
     pdf_path = Path(path)
-    sections, text, method = _extract_sections(pdf_path)
-    return build_document_from_sections(pdf_path, sections, text, method)
+    sections, text, method, section_lines = _extract_sections(pdf_path)
+    return build_document_from_sections(pdf_path, sections, text, method, section_lines)
 
 
 def build_document_from_sections(
@@ -94,15 +98,24 @@ def build_document_from_sections(
     sections: dict[str, str],
     text: str,
     method: str,
+    section_lines: dict[str, list[VisualLine]] | None = None,
 ) -> ExtractedDocument:
     pdf_path = Path(pdf_path)
+    section_lines = section_lines or {}
     _write_debug_outputs(pdf_path, text, sections)
     year = detect_document_year(pdf_path, text)
     _warn_missing_sections(pdf_path, text, sections)
 
     statements: dict[str, Statement] = {}
     for name in COMPARABLE_STATEMENTS:
-        rows = extract_rows(sections.get(name, ""), statement_name=name)
+        rows = extract_rows(
+            sections.get(name, ""),
+            statement_name=name,
+            visual_lines=section_lines.get(name),
+            document_id=pdf_path.name,
+            source_file=str(pdf_path),
+            extraction_method=method,
+        )
         logger.info("Statement extraction: file={} section={} rows={}", pdf_path.name, name, len(rows))
         if rows:
             statements[name] = Statement(name=name, rows=rows)
@@ -113,7 +126,7 @@ def build_document_from_sections(
         source_file=str(pdf_path),
         extraction_method=method,
         statements=statements,
-        pages=[],
+        pages=sorted({row.page for statement in statements.values() for row in statement.rows if row.page is not None}),
         confidence=confidence,
     )
 
@@ -126,24 +139,24 @@ def calculate_extraction_quality(statements: dict[str, Statement]) -> float:
     return score_extraction(document, "quality").confidence
 
 
-def _extract_sections(pdf_path: Path) -> tuple[dict[str, str], str, str]:
-    layout_sections, layout_text = extract_layout_sections(pdf_path)
+def _extract_sections(pdf_path: Path) -> tuple[dict[str, str], str, str, dict[str, list[VisualLine]]]:
+    layout_sections, layout_text, layout_lines = extract_layout_sections_with_metadata(pdf_path)
     if any(section in layout_sections for section in COMPARABLE_STATEMENTS):
-        return layout_sections, layout_text, "pdfplumber_layout"
+        return layout_sections, layout_text, "pdfplumber_layout", layout_lines
 
     text, method = extract_text(pdf_path)
     text_sections = detect_sections(text)
     comparable_detected = any(section in text_sections for section in COMPARABLE_STATEMENTS)
     if comparable_detected and text.strip():
-        return text_sections, text, method
+        return text_sections, text, method, {}
 
     if len(text.strip()) < NEAR_ZERO_TEXT_LENGTH or not comparable_detected:
         ocr_text = extract_with_ocr(pdf_path)
         ocr_sections = detect_sections(ocr_text)
         if any(section in ocr_sections for section in COMPARABLE_STATEMENTS):
-            return ocr_sections, ocr_text, "ocr_fallback"
+            return ocr_sections, ocr_text, "ocr_fallback", {}
 
-    return text_sections, text, method
+    return text_sections, text, method, {}
 
 
 def _write_debug_outputs(pdf_path: Path, text: str, sections: dict[str, str]) -> None:
@@ -168,14 +181,25 @@ def _warn_missing_sections(pdf_path: Path, text: str, sections: dict[str, str]) 
     )
 
 
-def extract_rows(section_text: str, statement_name: str = "") -> list[StatementRow]:
+
+def extract_rows(
+    section_text: str,
+    statement_name: str = "",
+    visual_lines: list[VisualLine] | None = None,
+    document_id: str = "",
+    source_file: str = "",
+    extraction_method: str = "unknown",
+) -> list[StatementRow]:
     rows: list[StatementRow] = []
     statement_key = normalize_label(statement_name) or statement_name or "statement"
     pending_label = ""
     parent_context = ""
     variation_period_counts: dict[str, int] = {}
+    line_sources = visual_lines if visual_lines is not None else section_text.splitlines()
 
-    for raw_line in section_text.splitlines():
+    for source in line_sources:
+        visual_line = source if isinstance(source, VisualLine) else None
+        raw_line = visual_line.text if visual_line else str(source)
         clean, header_cleaned = _clean_extracted_line(raw_line)
         if not clean:
             continue
@@ -212,20 +236,38 @@ def extract_rows(section_text: str, statement_name: str = "") -> list[StatementR
             canonical = f"{statement_key}__unknown_line_{len(rows) + 1}"
         elif statement_key == "variation_actif_net" and normalized in VARIATION_PERIOD_LABELS:
             count = variation_period_counts.get(normalized, 0)
-            context = VARIATION_PERIOD_CONTEXTS[count] if count < len(VARIATION_PERIOD_CONTEXTS) else f"occurrence_{count + 1}"
+            context_name = VARIATION_PERIOD_CONTEXTS[count] if count < len(VARIATION_PERIOD_CONTEXTS) else f"occurrence_{count + 1}"
             variation_period_counts[normalized] = count + 1
-            canonical = f"{statement_key}__{context}_{normalized}"
+            canonical = f"{statement_key}__{context_name}_{normalized}"
         elif statement_key == "variation_actif_net" and parent_context and normalized in VARIATION_CONTEXT_LABELS:
             canonical = f"{statement_key}__{parent_context}_{normalized}"
         else:
             canonical = normalized
+        current_value = normalize_number(current_raw)
+        previous_value = normalize_number(previous_raw)
+        section_name = parent_context or statement_name
         rows.append(
             StatementRow(
                 label=label,
                 canonical_label=canonical,
-                current_value=normalize_number(current_raw),
-                previous_value=normalize_number(previous_raw),
+                current_value=current_value,
+                previous_value=previous_value,
+                page=visual_line.page if visual_line else None,
                 confidence=confidence,
+                evidence=_build_row_evidence(
+                    visual_line,
+                    statement_name=statement_name,
+                    section_name=section_name,
+                    label=label,
+                    current_raw=current_raw,
+                    previous_raw=previous_raw,
+                    current_value=current_value,
+                    previous_value=previous_value,
+                    extraction_method=extraction_method,
+                    document_id=document_id,
+                    source_file=source_file,
+                    confidence=confidence,
+                ),
             )
         )
 
@@ -265,6 +307,78 @@ def parse_financial_row(line: str) -> tuple[str, str, str] | None:
         return None
     best = max(candidates, key=lambda item: item.score)
     return best.label, best.current_raw, best.previous_raw
+
+
+
+def _build_row_evidence(
+    visual_line: VisualLine | None,
+    statement_name: str,
+    section_name: str,
+    label: str,
+    current_raw: str,
+    previous_raw: str,
+    current_value: float | int | None,
+    previous_value: float | int | None,
+    extraction_method: str,
+    document_id: str,
+    source_file: str,
+    confidence: float,
+) -> Evidence:
+    bbox_row = visual_line.row_bbox if visual_line else None
+    bbox_label = None
+    bbox_current = None
+    bbox_previous = None
+    bounding_box = bbox_row
+    raw_text = visual_line.text if visual_line else f"{label} {current_raw} {previous_raw}".strip()
+
+    if visual_line:
+        current_count = len(current_raw.split()) if current_raw else 0
+        previous_count = len(previous_raw.split()) if previous_raw else 0
+        words = list(visual_line.words)
+        tail_previous = words[-previous_count:] if previous_count and len(words) >= previous_count else []
+        tail_current_start = max(len(words) - previous_count - current_count, 0)
+        tail_current_end = len(words) - previous_count if previous_count else len(words)
+        tail_current = words[tail_current_start:tail_current_end] if current_count else []
+        label_words = words[:tail_current_start] if tail_current_start > 0 else words[: max(len(words) - current_count - previous_count, 0)]
+        bbox_label = _bbox_from_words(label_words)
+        bbox_current = _bbox_from_words(tail_current)
+        bbox_previous = _bbox_from_words(tail_previous)
+        bounding_box = bbox_current or bbox_previous or bbox_row
+
+    return Evidence(
+        line_id=uuid4().hex,
+        document_id=document_id,
+        source_pdf=source_file,
+        page=visual_line.page if visual_line else None,
+        statement_name=statement_name,
+        section_name=section_name,
+        bounding_box=bounding_box,
+        bbox_label=bbox_label,
+        bbox_current=bbox_current,
+        bbox_previous=bbox_previous,
+        bbox_row=bbox_row,
+        extraction_method=extraction_method,
+        raw_text=raw_text,
+        normalized_line=normalize_label(raw_text),
+        label_text=label,
+        value_text_current=current_raw,
+        value_text_previous=previous_raw,
+        normalized_value=current_value if current_value is not None else previous_value,
+        current_value=current_value,
+        previous_value=previous_value,
+        confidence=confidence,
+    )
+
+
+def _bbox_from_words(words: list) -> tuple[float, float, float, float] | None:
+    if not words:
+        return None
+    return (
+        min(word.x0 for word in words),
+        min(word.top for word in words),
+        max(word.x1 for word in words),
+        max(word.bottom for word in words),
+    )
 
 
 def _valid_value_tokens(tokens: list[str]) -> bool:
@@ -383,7 +497,7 @@ def _strip_table_header_prefixes(line: str) -> tuple[str, bool]:
 def _is_standalone_header(normalized: str) -> bool:
     if not normalized:
         return True
-    if normalized.startswith(("bilan_arrete", "note_annee", "actif_note", "passif_note")):
+    if normalized.startswith(("bilan_arrete", "note_annee", "actif_note", "passif_note", "page_")):
         return True
     if normalized in {"etat_resultat", "etat_variation_actif_net", "annee", "note"}:
         return True
@@ -400,6 +514,9 @@ def _parent_context_for_heading(line: str) -> str:
     return PARENT_CONTEXTS.get(normalize_label(line), "")
 
 def _looks_like_label_continuation(line: str) -> bool:
+    normalized = normalize_label(line)
+    if normalized.startswith("page_"):
+        return False
     return _contains_alpha(line) and not _is_pure_section_line(line) and not _parent_context_for_heading(line)
 
 
@@ -435,4 +552,5 @@ def is_bad_label(label: str) -> bool:
         return True
 
     return normalized in {"note", "annee", "31_12_2024", "31_12_2025", "2024", "2025"}
+
 

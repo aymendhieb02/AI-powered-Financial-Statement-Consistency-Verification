@@ -4,11 +4,11 @@ from pathlib import Path
 
 from sicav_checker.comparison.cross_year_comparator import compare_documents
 from sicav_checker.comparison.metrics import build_metric_breakdown, build_review_items, write_metric_debug
-from sicav_checker.domain.models import DocumentMetadata, FinancialDocument, FinancialStatement, Severity, StatementRow, Status
+from sicav_checker.domain.models import DocumentMetadata, Evidence, FinancialDocument, FinancialStatement, Severity, StatementRow, Status
 
 
-def row(label: str, key: str, current: float | int | None = None, previous: float | int | None = None) -> StatementRow:
-    return StatementRow(label=label, canonical_label=key, current_value=current, previous_value=previous, confidence=0.9)
+def row(label: str, key: str, current: float | int | None = None, previous: float | int | None = None, evidence: Evidence | None = None) -> StatementRow:
+    return StatementRow(label=label, canonical_label=key, current_value=current, previous_value=previous, confidence=0.9, evidence=evidence)
 
 
 def doc(year: int, rows: list[StatementRow]) -> FinancialDocument:
@@ -46,6 +46,7 @@ def test_fail_only_for_actual_carry_forward_mismatch() -> None:
     assert metrics["actual_mismatches"] == 1
     assert metrics["verdict"]["label"] == "FAIL"
     assert metrics["risk"]["category"] == "HIGH_FINANCIAL_RISK"
+    assert metrics["accounting_health"]["label"] == "FAIL" or metrics["accounting_health"]["label"] == "NEEDS_REVIEW"
 
 
 def test_duplicate_label_detail_recommends_parent_context() -> None:
@@ -57,6 +58,8 @@ def test_duplicate_label_detail_recommends_parent_context() -> None:
     duplicate = next(item for item in details if item["status"] == Status.DUPLICATE_LABEL.value)
     assert "parent context" in duplicate["recommended_action"].lower()
     assert duplicate["explanation"]
+    assert duplicate["issue_classification"] == "structural_extraction_issue"
+    assert duplicate["status_group"] == "structural"
 
 
 def test_metric_debug_json_contains_formula_inputs(tmp_path: Path) -> None:
@@ -85,3 +88,34 @@ def test_anomaly_detail_contains_values_explanation_and_action() -> None:
     assert item["difference"] == -10
     assert item["explanation"]
     assert item["recommended_action"]
+    assert item["reason"] == "value_difference"
+    assert item["issue_classification"] == "accounting_issue"
+    assert item["status_group"] == "financial"
+
+
+def test_polluted_label_detail_exposes_explicit_reasons() -> None:
+    old = doc(2024, [row("BILAN ARRETE AU 31 DECEMBRE 2024 Portefeuille-titres", "portefeuille_titres", current=100)])
+    new = doc(2025, [row("Portefeuille-titres", "portefeuille_titres", previous=100)])
+    details = build_review_items(compare_documents(old, new), old, new)
+
+    item = details[0]
+    assert "contains_header" in item["pollution_reasons"]
+    assert item["issue_classification"] == "polluted_label"
+
+
+def test_duplicate_review_item_preserves_candidate_evidence() -> None:
+    old = doc(
+        2024,
+        [
+            row("Capital", "capital", current=1, evidence=Evidence(page=4, raw_text="Capital 1", section_name="bilan")),
+            row("Capital", "capital", current=2, evidence=Evidence(page=4, raw_text="Capital 2", section_name="bilan")),
+        ],
+    )
+    new = doc(2025, [row("Capital", "capital", previous=1, evidence=Evidence(page=5, raw_text="Capital 1", section_name="bilan"))])
+
+    details = build_review_items(compare_documents(old, new), old, new)
+    duplicate = next(item for item in details if item["status"] == Status.DUPLICATE_LABEL.value)
+
+    assert len(duplicate["duplicate_candidates"]) >= 2
+    assert duplicate["duplicate_candidates"][0]["raw_text"]
+    assert duplicate["old_section"] == "bilan"

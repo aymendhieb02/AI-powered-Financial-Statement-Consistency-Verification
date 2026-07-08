@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -28,6 +28,17 @@ POLLUTED_LABEL_FRAGMENTS = (
     "montants_exprimes",
     "annee_202",
     "note_annee",
+)
+POLLUTION_REASON_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("contains_header", ("bilan_arrete", "etat_de_resultat", "etat_resultat", "actif_note", "passif_note")),
+    ("contains_year", ("annee_202", "31_12_20", "31_decembre_20")),
+    ("contains_page_title", ("montants_exprimes",)),
+    ("contains_note_title", ("note_annee", "note")),
+    (
+        "contains_table_title",
+        ("etat_variation_actif_net_annee", "etat_de_variation_actif_net_annee", "variation_de_l_actif_net"),
+    ),
+    ("contains_duplicated_prefix", ("bilan_bilan", "etat_resultat_etat_resultat", "etat_variation_actif_net_etat_variation_actif_net")),
 )
 
 
@@ -105,8 +116,6 @@ def score_extraction(
     label_quality = 1.0 - min(polluted_label_count / max(total_rows, 1), 1.0)
     duplicate_quality = 1.0 - min(duplicate_label_count / max(total_rows, 1), 1.0)
 
-    # Row count is deliberately only one signal; garbage-heavy table extraction
-    # still scores poorly through labels, numbers, totals, and arithmetic.
     score = (
         0.22 * statement_score
         + 0.20 * totals_score
@@ -144,13 +153,20 @@ def score_extraction(
     )
 
 
-def _is_polluted_label(label: str) -> bool:
+def pollution_reasons(label: str) -> list[str]:
     raw_key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
     normalized = normalize_label(label)
-    return any(
-        fragment in raw_key or fragment in normalized
-        for fragment in POLLUTED_LABEL_FRAGMENTS
-    )
+    reasons: list[str] = []
+    for reason, fragments in POLLUTION_REASON_RULES:
+        if any(fragment in raw_key or fragment in normalized for fragment in fragments):
+            reasons.append(reason)
+    if any(fragment in raw_key or fragment in normalized for fragment in POLLUTED_LABEL_FRAGMENTS) and not reasons:
+        reasons.append("contains_header")
+    return reasons
+
+
+def _is_polluted_label(label: str) -> bool:
+    return bool(pollution_reasons(label))
 
 
 def _duplicate_count(document: ExtractedDocument) -> int:
