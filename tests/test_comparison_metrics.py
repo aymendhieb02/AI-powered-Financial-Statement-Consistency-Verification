@@ -119,3 +119,35 @@ def test_duplicate_review_item_preserves_candidate_evidence() -> None:
     assert len(duplicate["duplicate_candidates"]) >= 2
     assert duplicate["duplicate_candidates"][0]["raw_text"]
     assert duplicate["old_section"] == "bilan"
+
+
+def test_new_only_line_is_classified_as_presentation_review_not_accounting_failure() -> None:
+    old = doc(2024, [row("TOTAL ACTIF", "total_actif", current=100)])
+    new = doc(2025, [row("TOTAL ACTIF", "total_actif", previous=100), row("New fee line", "new_fee_line", previous=12)])
+    results = compare_documents(old, new)
+    details = build_review_items(results, old, new)
+
+    new_only = next(item for item in details if item["canonical_label"] == "new_fee_line")
+    metrics = build_metric_breakdown(old, new, results)
+
+    assert new_only["issue_type"] == "new_reporting_line"
+    assert new_only["issue_classification"] == "presentation_change"
+    assert metrics["actual_mismatches"] == 0
+    assert metrics["verdict"]["label"] == "NEEDS REVIEW"
+
+
+def test_extraction_coverage_is_capped_and_extra_pairings_are_reported() -> None:
+    old = doc(2024, [row("A", "a", current=1)])
+    new = doc(2025, [row("A", "a", previous=1)])
+    from sicav_checker.domain.models import ComparisonResult, Severity, Status
+
+    comparisons = [
+        ComparisonResult(pair="2024->2025", year=2024, statement="bilan", old_label="A", new_label="A", canonical_label="a", old_value=1, new_value=1, status=Status.CARRY_FORWARD_OK, severity=Severity.LOW),
+        ComparisonResult(pair="2024->2025", year=2024, statement="bilan", old_label="B", new_label="B", canonical_label="b", old_value=2, new_value=2, status=Status.CARRY_FORWARD_OK, severity=Severity.LOW),
+    ]
+
+    metrics = build_metric_breakdown(old, new, comparisons)
+
+    assert metrics["extraction_coverage"] == 100
+    assert metrics["extraction_coverage_raw_numerator"] == 2
+    assert metrics["extra_pairings"] == 1

@@ -17,6 +17,17 @@ class RowEntry:
     row: StatementRow
 
 
+VARIATION_STATEMENT_KEYS = {"variation_actif_net", "etat_variation_actif_net"}
+VARIATION_CONTEXTS = {"souscriptions", "rachats", "operations_exploitation", "actif_net", "nombre_actions"}
+VARIATION_CONTEXTUAL_LABELS = {
+    "capital",
+    "regularisation_sommes_non_distribuables",
+    "regularisation_sommes_distribuables",
+    "en_debut_exercice",
+    "en_fin_exercice",
+}
+
+
 def compare_documents(old_doc: ExtractedDocument, new_doc: ExtractedDocument, tolerance: float = 0.001) -> list[ComparisonResult]:
     results: list[ComparisonResult] = []
     pair = f"{old_doc.document_year}->{new_doc.document_year}"
@@ -71,12 +82,55 @@ def _dedupe_entries(statement_name: str, rows: list[StatementRow]) -> tuple[list
 
 
 def _canonical_key(statement_name: str, row: StatementRow) -> str:
-    canonical = row.canonical_label or ""
-    if canonical:
-        return canonical
     statement_key = normalize_label(statement_name) or statement_name
-    label_key = normalize_label(row.label) or "unknown_line"
-    return f"{statement_key}__{label_key}"
+    canonical = (row.canonical_label or "").strip()
+    if not canonical:
+        label_key = normalize_label(row.label) or "unknown_line"
+        canonical = f"{statement_key}__{label_key}"
+
+    if statement_key in VARIATION_STATEMENT_KEYS:
+        return _variation_key_with_context(canonical, row)
+    return canonical
+
+
+def _variation_key_with_context(canonical: str, row: StatementRow) -> str:
+    if canonical.startswith("variation_actif_net__") and canonical.count("__") >= 2:
+        return canonical
+
+    legacy = _legacy_variation_key(canonical)
+    if legacy:
+        return legacy
+
+    base = canonical.split("__")[-1]
+    if base not in VARIATION_CONTEXTUAL_LABELS:
+        return canonical
+
+    evidence = row.evidence
+    context = ""
+    if evidence is not None:
+        context = normalize_label(evidence.section_name or evidence.section or "")
+    if context in {"etat_variation_actif_net", "variation_actif_net"}:
+        context = ""
+    if context in VARIATION_CONTEXTS:
+        return f"variation_actif_net__{context}__{base}"
+    return canonical
+
+
+def _legacy_variation_key(canonical: str) -> str | None:
+    rest = ""
+    if canonical.startswith("variation_actif_net__"):
+        rest = canonical.removeprefix("variation_actif_net__")
+    elif canonical.startswith("variation_actif_net_"):
+        rest = canonical.removeprefix("variation_actif_net_")
+    if not rest:
+        return None
+    for context in sorted(VARIATION_CONTEXTS, key=len, reverse=True):
+        prefix = f"{context}_"
+        if rest.startswith(prefix):
+            base = rest[len(prefix):]
+            if base in VARIATION_CONTEXTUAL_LABELS:
+                return f"variation_actif_net__{context}__{base}"
+    return None
 
 
 def _compare_entry(

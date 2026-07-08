@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -130,7 +131,6 @@ def _section_lines(lines: list[VisualLine], raw_text: str) -> dict[str, list[Vis
 
 
 def _offset_to_line(offsets: list[int], offset: int) -> int:
-    for index, line_offset in enumerate(offsets):
-        if line_offset >= offset:
-            return index
-    return len(offsets)
+    if not offsets:
+        return 0
+    return max(0, min(len(offsets) - 1, bisect_right(offsets, offset) - 1))

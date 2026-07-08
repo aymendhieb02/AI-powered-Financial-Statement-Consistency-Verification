@@ -45,8 +45,10 @@ def comparison_coverage(old_document: FinancialDocument, new_document: Financial
         if (item.old_label is not None and item.new_label is not None) or item.status in DUPLICATE_STATUSES
     }
     denominator = len(expected_keys)
-    coverage = round((len(matched_keys) / denominator) * 100, 2) if denominator else 0.0
-    coverage = min(100.0, coverage)
+    raw_matched_count = len(matched_keys)
+    capped_matched_count = min(raw_matched_count, denominator) if denominator else 0
+    extra_pairings = max(0, raw_matched_count - denominator)
+    coverage = round((capped_matched_count / denominator) * 100, 2) if denominator else 0.0
     matched = sum(1 for item in comparisons if item.status in OK_STATUSES)
     mismatched = sum(1 for item in comparisons if item.status in MISMATCH_STATUSES)
     missing_old = sum(1 for item in comparisons if item.status in MISSING_OLD_STATUSES)
@@ -57,6 +59,9 @@ def comparison_coverage(old_document: FinancialDocument, new_document: Financial
         "new_extracted_lines": count_financial_lines(new_document),
         "comparable_lines": denominator,
         "matched_lines": matched,
+        "paired_unique_accounts": capped_matched_count,
+        "paired_unique_accounts_raw": raw_matched_count,
+        "extra_pairings": extra_pairings,
         "mismatched_lines": mismatched,
         "missing_in_old": missing_old,
         "missing_in_new": missing_new,

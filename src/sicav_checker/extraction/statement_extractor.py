@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass
@@ -240,9 +240,9 @@ def extract_rows(
             count = variation_period_counts.get(normalized, 0)
             context_name = VARIATION_PERIOD_CONTEXTS[count] if count < len(VARIATION_PERIOD_CONTEXTS) else f"occurrence_{count + 1}"
             variation_period_counts[normalized] = count + 1
-            canonical = f"{statement_key}__{context_name}_{normalized}"
+            canonical = f"{statement_key}__{context_name}__{normalized}"
         elif statement_key == "variation_actif_net" and parent_context and normalized in VARIATION_CONTEXT_LABELS:
-            canonical = f"{statement_key}__{parent_context}_{normalized}"
+            canonical = f"{statement_key}__{parent_context}__{normalized}"
         else:
             canonical = normalized
         current_value = normalize_number(current_raw)
@@ -599,8 +599,3 @@ def is_bad_label(label: str) -> bool:
         return True
 
     return normalized in {"note", "annee", "31_12_2024", "31_12_2025", "2024", "2025"}
-
-
-
-
-

@@ -98,8 +98,8 @@ function EvidenceImage({ title, page, bbox, issueType }: { title: string; page?:
         <div className='flex min-h-[420px] flex-col items-center justify-center gap-3 bg-slate-50 p-8 text-center text-sm text-slate-500'>
           <FileSearch size={18} className='text-slate-400' />
           <div>
-            <div className='font-medium text-slate-700'>Visual preview not available for this page yet.</div>
-            <div className='mt-1'>The page reference and extracted row details are still available below.</div>
+            <div className='font-medium text-slate-700'>PDF page image is not available for this evidence item.</div>
+            <div className='mt-1'>Use the page number, section, raw line, and value evidence shown above.</div>
           </div>
         </div>
       )}
@@ -225,6 +225,7 @@ export function EvidenceReviewPage() {
           label={item?.account_label_old || item?.old_label}
           value={item?.old_current_value ?? item?.old_value}
           page={oldPage}
+          pageNumberFallback={item?.old_page}
           rawLine={item?.old_raw_line || item?.old_line_text}
           bbox={item?.old_bbox}
           issueType={item?.issue_type}
@@ -236,6 +237,7 @@ export function EvidenceReviewPage() {
           label={item?.account_label_new || item?.new_label}
           value={item?.new_previous_value ?? item?.new_value}
           page={newPage}
+          pageNumberFallback={item?.new_page}
           rawLine={item?.new_raw_line || item?.new_line_text}
           bbox={item?.new_bbox}
           issueType={item?.issue_type}
@@ -285,7 +287,8 @@ export function EvidenceReviewPage() {
   );
 }
 
-function EvidenceCard({ title, documentId, label, value, page, rawLine, bbox, issueType, sectionFallback }: { title: string; documentId?: string | null; label?: string | null; value?: number | null; page?: DocumentPageResponse | null; rawLine?: string | null; bbox?: number[] | null; issueType?: string; sectionFallback?: string | null }) {
+function EvidenceCard({ title, documentId, label, value, page, pageNumberFallback, rawLine, bbox, issueType, sectionFallback }: { title: string; documentId?: string | null; label?: string | null; value?: number | null; page?: DocumentPageResponse | null; pageNumberFallback?: number | null; rawLine?: string | null; bbox?: number[] | null; issueType?: string; sectionFallback?: string | null }) {
+  const visiblePage = page?.page_number ?? pageNumberFallback;
   return (
     <Card>
       <CardContent className='space-y-4 p-5'>

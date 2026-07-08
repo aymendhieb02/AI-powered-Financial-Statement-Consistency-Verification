@@ -198,11 +198,14 @@ class VerificationSummary(BaseModel):
     financial_consistency_denominator: int = 0
     extraction_coverage: float = 0
     extraction_coverage_numerator: int = 0
+    extraction_coverage_raw_numerator: int = 0
+    extra_pairings: int = 0
     extraction_coverage_denominator: int = 0
     structural_quality: float = 0
     actual_mismatches: int = 0
     missing_in_old_current: int = 0
     missing_in_new_comparative: int = 0
+    new_reporting_lines: int = 0
     duplicate_labels: int = 0
     polluted_labels: int = 0
     merged_rows: int = 0

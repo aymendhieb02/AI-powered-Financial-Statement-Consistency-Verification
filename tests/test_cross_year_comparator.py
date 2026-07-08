@@ -49,3 +49,40 @@ def test_carry_forward_uses_old_current_and_new_previous_only() -> None:
     assert item.old_value == 1013745
     assert item.new_value == 1013745
     assert item.status == Status.CARRY_FORWARD_OK
+
+
+def test_variation_context_prevents_false_duplicate_pairing() -> None:
+    from sicav_checker.domain.models import DocumentMetadata, Evidence, FinancialDocument, FinancialStatement, StatementRow
+
+    old = FinancialDocument(
+        metadata=DocumentMetadata(year=2023, source_file="2023.pdf"),
+        statements={
+            "etat_variation_actif_net": FinancialStatement(
+                name="etat_variation_actif_net",
+                rows=[
+                    StatementRow(label="Capital", canonical_label="capital", current_value=100, evidence=Evidence(section_name="souscriptions")),
+                    StatementRow(label="Capital", canonical_label="capital", current_value=80, evidence=Evidence(section_name="rachats")),
+                ],
+            )
+        },
+    )
+    new = FinancialDocument(
+        metadata=DocumentMetadata(year=2024, source_file="2024.pdf"),
+        statements={
+            "etat_variation_actif_net": FinancialStatement(
+                name="etat_variation_actif_net",
+                rows=[
+                    StatementRow(label="Capital", canonical_label="capital", previous_value=100, evidence=Evidence(section_name="souscriptions")),
+                    StatementRow(label="Capital", canonical_label="capital", previous_value=80, evidence=Evidence(section_name="rachats")),
+                ],
+            )
+        },
+    )
+
+    results = compare_documents(old, new)
+
+    assert {item.canonical_label for item in results} == {
+        "variation_actif_net__souscriptions__capital",
+        "variation_actif_net__rachats__capital",
+    }
+    assert all(item.status == Status.CARRY_FORWARD_OK for item in results)

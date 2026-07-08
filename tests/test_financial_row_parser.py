@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 
@@ -151,10 +151,10 @@ def test_variation_statement_duplicate_labels_include_parent_context() -> None:
         "etat_variation_actif_net",
     )
 
-    assert rows[0].canonical_label == "variation_actif_net__souscriptions_capital"
-    assert rows[1].canonical_label == "variation_actif_net__souscriptions_regularisation_sommes_non_distribuables"
-    assert rows[2].canonical_label == "variation_actif_net__rachats_capital"
-    assert rows[3].canonical_label == "variation_actif_net__rachats_regularisation_sommes_distribuables"
+    assert rows[0].canonical_label == "variation_actif_net__souscriptions__capital"
+    assert rows[1].canonical_label == "variation_actif_net__souscriptions__regularisation_sommes_non_distribuables"
+    assert rows[2].canonical_label == "variation_actif_net__rachats__capital"
+    assert rows[3].canonical_label == "variation_actif_net__rachats__regularisation_sommes_distribuables"
 
 
 @pytest.mark.parametrize("year", range(2020, 2026))
@@ -225,10 +225,10 @@ def test_variation_statement_repeated_period_rows_are_contextualized() -> None:
     )
 
     assert [row.canonical_label for row in rows] == [
-        "variation_actif_net__actif_net_en_debut_exercice",
-        "variation_actif_net__actif_net_en_fin_exercice",
-        "variation_actif_net__nombre_actions_en_debut_exercice",
-        "variation_actif_net__nombre_actions_en_fin_exercice",
+        "variation_actif_net__actif_net__en_debut_exercice",
+        "variation_actif_net__actif_net__en_fin_exercice",
+        "variation_actif_net__nombre_actions__en_debut_exercice",
+        "variation_actif_net__nombre_actions__en_fin_exercice",
     ]
 
 

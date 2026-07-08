@@ -68,11 +68,14 @@ export type VerificationSummary = {
   financial_consistency_denominator?: number;
   extraction_coverage?: number;
   extraction_coverage_numerator?: number;
+  extraction_coverage_raw_numerator?: number;
+  extra_pairings?: number;
   extraction_coverage_denominator?: number;
   structural_quality?: number;
   actual_mismatches?: number;
   missing_in_old_current?: number;
   missing_in_new_comparative?: number;
+  new_reporting_lines?: number;
   duplicate_labels?: number;
   polluted_labels?: number;
   low_confidence_parse?: number;

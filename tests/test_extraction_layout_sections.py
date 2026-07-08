@@ -182,3 +182,11 @@ def test_extract_document_uses_ocr_only_after_text_mode_finds_no_comparable_sect
     assert calls["ocr"] == 1
     assert document.extraction_method == "ocr_fallback"
     assert set(COMPARABLE_STATEMENTS).issubset(document.statements)
+
+
+def test_offset_to_line_returns_containing_visual_line() -> None:
+    from sicav_checker.extraction.layout_section_extractor import _offset_to_line
+
+    assert _offset_to_line([0, 10, 20], 12) == 1
+    assert _offset_to_line([0, 10, 20], 10) == 1
+    assert _offset_to_line([0, 10, 20], 999) == 2

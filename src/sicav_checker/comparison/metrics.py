@@ -31,6 +31,7 @@ def build_metric_breakdown(
     exact_matches = sum(1 for item in compared if item.status in OK_STATUSES)
     actual_mismatches = sum(1 for item in comparisons if item.status in MISMATCH_STATUSES)
     missing_old = sum(1 for item in comparisons if item.status in MISSING_OLD_STATUSES)
+    new_reporting_lines = sum(1 for item in comparisons if item.status in MISSING_OLD_STATUSES)
     missing_new = sum(1 for item in comparisons if item.status in MISSING_NEW_STATUSES)
     duplicate_labels = sum(1 for item in comparisons if item.status in DUPLICATE_STATUSES)
     low_confidence = sum(1 for item in comparisons if item.status in {Status.PARSE_LOW_CONFIDENCE, Status.LOW_CONFIDENCE_EXTRACTION})
@@ -52,7 +53,10 @@ def build_metric_breakdown(
     financial_denominator = len(compared)
     financial_consistency = _percent(exact_matches, financial_denominator)
     coverage_denominator = len(expected_keys)
-    extraction_coverage = _percent(len(paired_keys), coverage_denominator)
+    paired_count = len(paired_keys)
+    capped_paired_count = min(paired_count, coverage_denominator) if coverage_denominator else 0
+    extra_pairings = max(0, paired_count - coverage_denominator)
+    extraction_coverage = _percent(capped_paired_count, coverage_denominator)
     structural_issue_count = duplicate_labels + polluted_labels + low_confidence + merged_rows + hierarchy_gaps
     structural_denominator = max(len(comparisons), 1)
     structural_quality = round(max(0.0, 100.0 - (structural_issue_count / structural_denominator * 100)), 2)
@@ -79,7 +83,9 @@ def build_metric_breakdown(
         "financial_consistency_numerator": exact_matches,
         "financial_consistency_denominator": financial_denominator,
         "extraction_coverage": extraction_coverage,
-        "extraction_coverage_numerator": len(paired_keys),
+        "extraction_coverage_numerator": capped_paired_count,
+        "extraction_coverage_raw_numerator": paired_count,
+        "extra_pairings": extra_pairings,
         "extraction_coverage_denominator": coverage_denominator,
         "structural_quality": structural_quality,
         "structural_issue_count": structural_issue_count,
@@ -87,6 +93,7 @@ def build_metric_breakdown(
         "missing_in_old_current": missing_old,
         "missing_in_new_comparative": missing_new,
         "missing_accounts": missing_old + missing_new,
+        "new_reporting_lines": new_reporting_lines,
         "duplicate_labels": duplicate_labels,
         "polluted_labels": polluted_labels,
         "merged_rows": merged_rows,
@@ -103,7 +110,7 @@ def build_metric_breakdown(
         "why_verdict": _why_verdict(verdict, actual_mismatches, critical_financial + identity_failures, missing_old + missing_new, structural_issue_count),
         "metric_debug": {
             "financial_consistency": {"numerator": exact_matches, "denominator": financial_denominator, "formula": "exact_matches / actually_compared_values * 100"},
-            "extraction_coverage": {"numerator": len(paired_keys), "denominator": coverage_denominator, "formula": "paired_unique_accounts / expected_unique_accounts * 100"},
+            "extraction_coverage": {"numerator": capped_paired_count, "raw_numerator": paired_count, "denominator": coverage_denominator, "extra_pairings": extra_pairings, "formula": "min(paired_unique_accounts, expected_unique_accounts) / expected_unique_accounts * 100"},
             "structural_quality": {"issues": structural_issue_count, "denominator": structural_denominator, "formula": "100 - structural_issues / comparison_rows * 100"},
             "accounting_health": accounting_health,
             "risk_score_inputs": risk.get("inputs", {}),
@@ -250,12 +257,12 @@ def _explain(item: ComparisonResult, old_year: int | None, new_year: int | None)
         )
     if status in MISSING_OLD_STATUSES:
         return (
-            "The comparative account is visible in the new report, but the matching source account was not found in the old report extraction.",
-            "new comparative key has no matching old current-year key.",
-            "This usually points to extraction coverage, label mapping, or a section-detection issue rather than a confirmed accounting failure.",
-            "Inspect the old report evidence and restore the missing source account before concluding on accounting consistency.",
-            "missing_old_current",
-            "missing_in_old",
+            "The new report contains a comparative or presentation line that does not have a distinct extracted source line in the old report.",
+            "new comparative key has no matching old current-year key; this may be a new reporting line, presentation split, or extraction gap.",
+            "This is not a confirmed accounting failure. It usually indicates a new reporting line, a presentation change, or an extraction/label mapping gap.",
+            "Inspect the old report evidence and decide whether this is a new reporting line, a presentation change, or a source-account extraction miss.",
+            "new_reporting_line",
+            "new_reporting_line",
         )
     if status in MISSING_NEW_STATUSES:
         return (
@@ -442,6 +449,8 @@ def _issue_classification(item: ComparisonResult, evidence_type: str, polluted: 
         return "structural_extraction_issue"
     if polluted:
         return "polluted_label"
+    if evidence_type == "new_reporting_line":
+        return "presentation_change"
     if evidence_type in {"missing_old_current", "missing_new_comparative", "low_confidence_parse", "review"}:
         return "extraction_issue"
     return "matched_value"
@@ -483,6 +492,8 @@ def _issue_type(item: ComparisonResult, evidence_type: str, polluted: list[str])
         return "polluted_label"
     if evidence_type == "low_confidence_parse":
         return "low_confidence"
+    if evidence_type == "new_reporting_line":
+        return "new_reporting_line"
     if evidence_type in {"missing_old_current", "missing_new_comparative"}:
         return "extraction_missing"
     if item.severity == Severity.CRITICAL and item.status in STRUCTURAL_STATUSES:
