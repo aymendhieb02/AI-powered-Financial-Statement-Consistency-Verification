@@ -92,6 +92,7 @@ function EvidenceImage({ title, page, bbox, issueType }: { title: string; page?:
         <div className='relative'>
           <img src={imageUrl} alt={title} className='w-full bg-white' onError={() => setFailed(true)} />
           {canOverlay ? <div className={'absolute border-2 shadow-[0_0_0_9999px_rgba(15,23,42,0.06)] ' + viewerAccent(issueType)} style={overlayStyle} /> : null}
+          {!canOverlay ? <div className='absolute bottom-3 right-3 rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs text-slate-600'>Exact highlight unavailable</div> : null}
         </div>
       ) : (
         <div className='flex min-h-[420px] flex-col items-center justify-center gap-3 bg-slate-50 p-8 text-center text-sm text-slate-500'>
@@ -167,7 +168,7 @@ export function EvidenceReviewPage() {
     return <EmptyState title='Evidence not found' description={error} action={<Button asChild><Link to={'/anomalies/' + runId}>Back to anomalies</Link></Button>} />;
   }
 
-  const displayLabel = item?.account_label_new || item?.account_label_old || humanizeLabel(item?.canonical_label);
+  const displayLabel = item?.account_label_new || item?.account_label_old || item?.new_label || item?.old_label || humanizeLabel(item?.canonical_label);
   const duplicateCandidates = item?.duplicate_candidates ?? [];
 
   return (
@@ -227,6 +228,7 @@ export function EvidenceReviewPage() {
           rawLine={item?.old_raw_line || item?.old_line_text}
           bbox={item?.old_bbox}
           issueType={item?.issue_type}
+          sectionFallback={item?.old_section || item?.statement_name || item?.statement}
         />
         <EvidenceCard
           title='New annual report'
@@ -237,6 +239,7 @@ export function EvidenceReviewPage() {
           rawLine={item?.new_raw_line || item?.new_line_text}
           bbox={item?.new_bbox}
           issueType={item?.issue_type}
+          sectionFallback={item?.new_section || item?.statement_name || item?.statement}
         />
       </div>
 
@@ -282,7 +285,7 @@ export function EvidenceReviewPage() {
   );
 }
 
-function EvidenceCard({ title, documentId, label, value, page, rawLine, bbox, issueType }: { title: string; documentId?: string | null; label?: string | null; value?: number | null; page?: DocumentPageResponse | null; rawLine?: string | null; bbox?: number[] | null; issueType?: string }) {
+function EvidenceCard({ title, documentId, label, value, page, rawLine, bbox, issueType, sectionFallback }: { title: string; documentId?: string | null; label?: string | null; value?: number | null; page?: DocumentPageResponse | null; rawLine?: string | null; bbox?: number[] | null; issueType?: string; sectionFallback?: string | null }) {
   return (
     <Card>
       <CardContent className='space-y-4 p-5'>
@@ -297,7 +300,7 @@ function EvidenceCard({ title, documentId, label, value, page, rawLine, bbox, is
         <div className='grid gap-3 text-sm md:grid-cols-2'>
           <Fact label='Account label' value={label || 'Not detected'} />
           <Fact label='Amount' value={money(value)} />
-          <Fact label='Section' value={page?.section || 'Not detected'} />
+          <Fact label='Section' value={page?.section || sectionFallback || 'Not detected'} />
           <Fact label='Evidence line' value={page?.raw_line || rawLine || 'Not detected'} />
         </div>
 

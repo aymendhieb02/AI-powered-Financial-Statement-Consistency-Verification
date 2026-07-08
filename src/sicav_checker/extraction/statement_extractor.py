@@ -84,6 +84,8 @@ class ParsedCandidate:
     current_raw: str
     previous_raw: str
     score: int
+    current_tokens: tuple[str, ...]
+    previous_tokens: tuple[str, ...]
 
 
 
@@ -279,8 +281,6 @@ def parse_financial_row(line: str) -> tuple[str, str, str] | None:
         return None
 
     candidates: list[ParsedCandidate] = []
-    # Try every split of the numeric suffix into current and previous values.
-    # This avoids greedy grouping such as "32 605 31 144" -> "3260531144".
     for current_start in range(1, len(tokens) - 1):
         for previous_start in range(current_start + 1, len(tokens)):
             label_tokens = tokens[:current_start]
@@ -300,6 +300,8 @@ def parse_financial_row(line: str) -> tuple[str, str, str] | None:
                     current_raw=" ".join(current_tokens),
                     previous_raw=" ".join(previous_tokens),
                     score=score,
+                    current_tokens=tuple(current_tokens),
+                    previous_tokens=tuple(previous_tokens),
                 )
             )
 
@@ -349,23 +351,33 @@ def _build_row_evidence(
         line_id=uuid4().hex,
         document_id=document_id,
         source_pdf=source_file,
+        file_name=Path(source_file).name if source_file else document_id,
         page=visual_line.page if visual_line else None,
+        page_number=visual_line.page if visual_line else None,
         statement_name=statement_name,
+        statement=statement_name,
         section_name=section_name,
+        section=section_name,
         bounding_box=bounding_box,
         bbox_label=bbox_label,
         bbox_current=bbox_current,
         bbox_previous=bbox_previous,
         bbox_row=bbox_row,
+        bbox_value=bbox_current or bbox_previous,
         extraction_method=extraction_method,
+        extraction_engine=extraction_method,
         raw_text=raw_text,
+        raw_line=raw_text,
         normalized_line=normalize_label(raw_text),
         label_text=label,
         value_text_current=current_raw,
         value_text_previous=previous_raw,
+        current_raw=current_raw,
+        previous_raw=previous_raw,
         normalized_value=current_value if current_value is not None else previous_value,
         current_value=current_value,
         previous_value=previous_value,
+        value_used=current_value if current_value is not None else previous_value,
         confidence=confidence,
     )
 
@@ -429,17 +441,41 @@ def _candidate_score(label: str, current_tokens: list[str], previous_tokens: lis
     score += (len(current_tokens) + len(previous_tokens)) * 15
     current_len = len(current_tokens)
     previous_len = len(previous_tokens)
+    total_numeric_pieces = current_len + previous_len
     if current_len == previous_len:
-        score += 8
+        score += 40
+    if current_len >= previous_len:
+        score += 28
+    else:
+        score -= 22
+    score -= abs(current_len - previous_len) * 18
+    score += min(current_len, previous_len) * 22
+    if total_numeric_pieces >= 6 and min(current_len, previous_len) < 2:
+        score -= 220
+    if total_numeric_pieces >= 4 and min(current_len, previous_len) == 1 and not note_removed:
+        score -= 90
+    if total_numeric_pieces == 5 and current_len == 3 and previous_len == 2:
+        score += 55
+    if total_numeric_pieces >= 6 and current_len >= 3 and previous_len >= 3:
+        score += 120
+    if total_numeric_pieces == 4 and current_len == 2 and previous_len == 2:
+        score += 60
+    if _looks_like_split_thousands_value(current_tokens):
+        score += 40
+    if _looks_like_split_thousands_value(previous_tokens):
+        score += 40
     if re.search(r"(?:^|\s)\(?\d{1,3}\)?(?:\s+\(?\d{3}\)?)+$", label):
         score -= 90
+    if re.search(r"\b\d{1,2}$", label.strip()):
+        score -= 420
     if note_removed:
-        # SICAV rows often contain a small note number before the current-year value.
-        score += 36 if (note_value is not None and note_value <= 20) else -40
+        score += 180 if (note_value is not None and note_value <= 20) else -40
         if normalized in LIKELY_NOTE_LABELS:
             score += 90
             if current_len >= previous_len:
                 score += 20
+        if previous_tokens == ["-"] and current_len == 1:
+            score -= 220
         elif previous_tokens == ["-"]:
             score -= 130
         elif previous_len > current_len:
@@ -448,8 +484,8 @@ def _candidate_score(label: str, current_tokens: list[str], previous_tokens: lis
         score -= 140
     if note_removed and previous_len - current_len >= 2 and previous_len >= 4:
         score -= 95
-    if not note_removed and current_tokens and re.fullmatch(r"\d{1,2}", current_tokens[0]) and normalized not in PROTECTED_NOTE_LABELS:
-        score -= 18
+    if not note_removed and previous_tokens != ["-"] and current_len <= 2 and current_tokens and re.fullmatch(r"\d{1,2}", current_tokens[0]) and normalized not in PROTECTED_NOTE_LABELS:
+        score -= 120
     if current_tokens == ["-"] or previous_tokens == ["-"]:
         score += 4
     return score
@@ -458,6 +494,17 @@ def _candidate_score(label: str, current_tokens: list[str], previous_tokens: lis
 def _is_integer_piece(token: str) -> bool:
     cleaned = token.strip().strip("()")
     return bool(re.fullmatch(r"-?\d{1,3}", cleaned))
+
+
+def _looks_like_split_thousands_value(tokens: list[str]) -> bool:
+    if len(tokens) <= 1 or tokens == ["-"]:
+        return False
+    if any("." in token or "," in token or "%" in token for token in tokens):
+        return False
+    first = re.sub(r"\D", "", tokens[0])
+    if not (1 <= len(first) <= 3):
+        return False
+    return all(len(re.sub(r"\D", "", token)) == 3 for token in tokens[1:])
 
 def _clean_extracted_line(raw_line: str) -> tuple[str, bool]:
     line = " ".join(raw_line.strip().split())
@@ -552,5 +599,8 @@ def is_bad_label(label: str) -> bool:
         return True
 
     return normalized in {"note", "annee", "31_12_2024", "31_12_2025", "2024", "2025"}
+
+
+
 
 

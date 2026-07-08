@@ -85,6 +85,42 @@ def test_project_service_marks_clean_run_as_pass(tmp_path: Path) -> None:
     assert run.summary["comparison_status"] in {"COMPLETE", "PARTIAL"}
     assert run.summary["accounting_status"] in {"PASS", "UNKNOWN"}
 
+def test_project_service_persists_side_specific_evidence_metadata(tmp_path: Path) -> None:
+    from sicav_checker.domain.models import Evidence
+
+    service = ProjectService(root_dir=tmp_path)
+    old = FinancialDocument(metadata=DocumentMetadata(year=2023, source_file="2023.pdf", confidence=0.9), statements={"etat_resultat": FinancialStatement(name="etat_resultat", rows=[StatementRow(label="TOTAL DES REVENUS DES PLACEMENTS", canonical_label="total_revenus_placements", current_value=1013745)])})
+    new = FinancialDocument(metadata=DocumentMetadata(year=2024, source_file="2024.pdf", confidence=0.9), statements={"etat_resultat": FinancialStatement(name="etat_resultat", rows=[StatementRow(label="TOTAL DES REVENUS DES PLACEMENTS", canonical_label="total_revenus_placements", previous_value=1013745)])})
+    comparison = ComparisonResult(
+        pair="2023->2024",
+        year=2023,
+        statement="etat_resultat",
+        old_label="TOTAL DES REVENUS DES PLACEMENTS",
+        new_label="TOTAL DES REVENUS DES PLACEMENTS",
+        canonical_label="total_revenus_placements",
+        old_value=1013745,
+        new_value=1013745,
+        status=Status.CARRY_FORWARD_OK,
+        severity=Severity.LOW,
+        old_evidence=Evidence(document_id="2023.pdf", source_pdf="2023.pdf", page=9, page_number=9, statement_name="etat_resultat", section_name="etat_resultat", raw_text="TOTAL DES REVENUS DES PLACEMENTS 1 013 745 474 019", raw_line="TOTAL DES REVENUS DES PLACEMENTS 1 013 745 474 019", current_value=1013745, previous_value=474019, bbox_current=(300, 100, 348, 110), bbox_previous=(360, 100, 399, 110)),
+        new_evidence=Evidence(document_id="2024.pdf", source_pdf="2024.pdf", page=10, page_number=10, statement_name="etat_resultat", section_name="etat_resultat", raw_text="TOTAL DES REVENUS DES PLACEMENTS 1 004 266 1 013 745", raw_line="TOTAL DES REVENUS DES PLACEMENTS 1 004 266 1 013 745", current_value=1004266, previous_value=1013745, bbox_current=(300, 100, 348, 110), bbox_previous=(360, 100, 399, 110)),
+    )
+
+    run = service._run_from_pipeline("project-id", PipelineResult(documents=[old, new], comparisons=[comparison], validations=[], missing_years=[], report_paths=[]))
+    evidence = run.evidence_items[0]
+
+    assert evidence["expected_value"] == 1013745
+    assert evidence["actual_value"] == 1013745
+    assert evidence["old_page"] == 9
+    assert evidence["new_page"] == 10
+    assert evidence["old_evidence"]["value_role"] == "current"
+    assert evidence["new_evidence"]["value_role"] == "previous"
+    assert evidence["old_evidence"]["value_used"] == 1013745
+    assert evidence["new_evidence"]["value_used"] == 1013745
+    assert evidence["old_evidence"]["bbox_value"] == [300.0, 100.0, 348.0, 110.0]
+    assert evidence["new_evidence"]["bbox_value"] == [360.0, 100.0, 399.0, 110.0]
+
+
 def test_project_service_persists_evidence_items_with_raw_lines(tmp_path: Path) -> None:
     service = ProjectService(root_dir=tmp_path)
     old = FinancialDocument(metadata=DocumentMetadata(year=2024, source_file="2024.pdf", confidence=0.9), statements={"bilan": FinancialStatement(name="bilan", rows=[StatementRow(label="TOTAL ACTIF", canonical_label="total_actif", current_value=100)])})

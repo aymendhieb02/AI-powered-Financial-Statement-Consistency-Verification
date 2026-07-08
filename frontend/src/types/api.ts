@@ -97,25 +97,35 @@ export type VerificationSummary = {
 export type EvidenceReference = {
   document_id?: string | null;
   source_pdf?: string | null;
+  file_name?: string | null;
   page?: number | null;
+  page_number?: number | null;
   statement_name?: string | null;
+  statement?: string | null;
   section_name?: string | null;
   section?: string | null;
   raw_text?: string | null;
+  raw_line?: string | null;
   normalized_line?: string | null;
   label_text?: string | null;
   value_text_current?: string | null;
   value_text_previous?: string | null;
+  current_raw?: string | null;
+  previous_raw?: string | null;
   current_value?: number | null;
   previous_value?: number | null;
   value?: number | null;
+  value_used?: number | null;
+  value_role?: string | null;
   extraction_method?: string | null;
+  extraction_engine?: string | null;
   confidence?: number | null;
   bounding_box?: number[] | null;
   bbox_label?: number[] | null;
   bbox_current?: number[] | null;
   bbox_previous?: number[] | null;
   bbox_row?: number[] | null;
+  bbox_value?: number[] | null;
 };
 
 export type Anomaly = {

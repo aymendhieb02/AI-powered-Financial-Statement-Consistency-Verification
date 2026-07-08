@@ -66,22 +66,34 @@ class VerificationRunResponse(BaseModel):
 class EvidenceReferenceModel(BaseModel):
     document_id: str | None = None
     source_pdf: str | None = None
+    file_name: str | None = None
     page: int | None = None
+    page_number: int | None = None
     statement_name: str | None = None
+    statement: str | None = None
     section_name: str | None = None
+    section: str | None = None
     raw_text: str | None = None
+    raw_line: str | None = None
     normalized_line: str | None = None
     label_text: str | None = None
     value_text_current: str | None = None
     value_text_previous: str | None = None
+    current_raw: str | None = None
+    previous_raw: str | None = None
     current_value: float | int | None = None
     previous_value: float | int | None = None
+    value: float | int | None = None
+    value_used: float | int | None = None
+    value_role: str | None = None
     bounding_box: list[float] | None = None
     bbox_label: list[float] | None = None
     bbox_current: list[float] | None = None
     bbox_previous: list[float] | None = None
     bbox_row: list[float] | None = None
+    bbox_value: list[float] | None = None
     extraction_method: str | None = None
+    extraction_engine: str | None = None
     confidence: float | None = None
 
 

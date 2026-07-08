@@ -259,6 +259,45 @@ def test_separator_rows_stop_multiline_merge_before_next_financial_row() -> None
     assert rows[0].label == "VARIATION DE L'ACTIF NET"
 
 
+def test_pdfplumber_visual_line_evidence_preserves_page_and_bboxes() -> None:
+    from sicav_checker.extraction.layout_section_extractor import VisualLine, VisualWord
+
+    line = VisualLine(
+        page=7,
+        top=100.0,
+        bottom=110.0,
+        x0=20.0,
+        x1=250.0,
+        text="TOTAL DES REVENUS DES PLACEMENTS 1 013 745 474 019",
+        words=(
+            VisualWord("TOTAL", 20.0, 100.0, 50.0, 110.0),
+            VisualWord("DES", 55.0, 100.0, 75.0, 110.0),
+            VisualWord("REVENUS", 80.0, 100.0, 130.0, 110.0),
+            VisualWord("DES", 135.0, 100.0, 155.0, 110.0),
+            VisualWord("PLACEMENTS", 160.0, 100.0, 230.0, 110.0),
+            VisualWord("1", 300.0, 100.0, 306.0, 110.0),
+            VisualWord("013", 309.0, 100.0, 327.0, 110.0),
+            VisualWord("745", 330.0, 100.0, 348.0, 110.0),
+            VisualWord("474", 360.0, 100.0, 378.0, 110.0),
+            VisualWord("019", 381.0, 100.0, 399.0, 110.0),
+        ),
+    )
+
+    row = extract_rows("", "etat_resultat", visual_lines=[line], document_id="2024.pdf", source_file="2024.pdf", extraction_method="pdfplumber_layout")[0]
+
+    assert row.page == 7
+    assert row.current_value == 1013745
+    assert row.previous_value == 474019
+    assert row.evidence is not None
+    assert row.evidence.page_number == 7
+    assert row.evidence.section_name == "etat_resultat"
+    assert row.evidence.bbox_row is not None
+    assert row.evidence.bbox_current is not None
+    assert row.evidence.bbox_previous is not None
+    assert row.evidence.value_text_current == "1 013 745"
+    assert row.evidence.value_text_previous == "474 019"
+
+
 def test_page_headers_do_not_create_fake_accounts() -> None:
     rows = extract_rows(
         """

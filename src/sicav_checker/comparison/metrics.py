@@ -145,9 +145,20 @@ def _review_item(item: ComparisonResult, index: int, old_year: int | None, new_y
     if isinstance(expected, (int, float)) and expected != 0 and isinstance(difference, (int, float)):
         difference_percent = round((float(difference) / float(expected)) * 100, 4)
     explanation, technical_reason, accountant_reason, recommended_action, evidence_type, reason = _explain(item, old_year, new_year)
-    old_evidence = _evidence(item.old_evidence, item.old_label, item.old_value, item.statement, old_engine)
-    new_evidence = _evidence(item.new_evidence, item.new_label, item.new_value, item.statement, new_engine)
-    duplicate_candidates = [_evidence(candidate, candidate.label_text or candidate.raw_text or item.canonical_label, candidate.current_value if candidate.current_value is not None else candidate.previous_value, item.statement, candidate.extraction_method or old_engine) for candidate in item.duplicate_candidates]
+    old_evidence = _side_evidence(item.old_evidence, item.old_label, item.old_value, item.statement, old_engine, old_document_id, value_role="current")
+    new_evidence = _side_evidence(item.new_evidence, item.new_label, item.new_value, item.statement, new_engine, new_document_id, value_role="previous")
+    duplicate_candidates = [
+        _side_evidence(
+            candidate,
+            candidate.label_text or candidate.raw_text or item.canonical_label,
+            candidate.current_value if candidate.current_value is not None else candidate.previous_value,
+            item.statement,
+            candidate.extraction_method or old_engine,
+            candidate.document_id or old_document_id or new_document_id,
+            value_role="current" if candidate.current_value is not None else "previous",
+        )
+        for candidate in item.duplicate_candidates
+    ]
     polluted = pollution_reasons(item.old_label or "") + pollution_reasons(item.new_label or "")
     unique_polluted = sorted(set(polluted))
     issue_classification = _issue_classification(item, evidence_type, unique_polluted)
@@ -186,18 +197,18 @@ def _review_item(item: ComparisonResult, index: int, old_year: int | None, new_y
         "old_document_year": old_year,
         "new_document_year": new_year,
         "compared_year": old_year,
-        "old_page": old_evidence.get("page"),
-        "new_page": new_evidence.get("page"),
-        "page": new_evidence.get("page") or old_evidence.get("page"),
-        "section": new_evidence.get("section_name") or old_evidence.get("section_name") or item.statement,
-        "old_section": old_evidence.get("section_name") or item.statement,
-        "new_section": new_evidence.get("section_name") or item.statement,
-        "old_line_text": old_evidence.get("raw_text"),
-        "new_line_text": new_evidence.get("raw_text"),
-        "old_raw_line": old_evidence.get("raw_text"),
-        "new_raw_line": new_evidence.get("raw_text"),
-        "old_bbox": old_evidence.get("bbox_row") or old_evidence.get("bounding_box"),
-        "new_bbox": new_evidence.get("bbox_row") or new_evidence.get("bounding_box"),
+        "old_page": old_evidence.get("page_number") or old_evidence.get("page"),
+        "new_page": new_evidence.get("page_number") or new_evidence.get("page"),
+        "page": new_evidence.get("page_number") or new_evidence.get("page") or old_evidence.get("page_number") or old_evidence.get("page"),
+        "section": new_evidence.get("section") or new_evidence.get("section_name") or old_evidence.get("section") or old_evidence.get("section_name") or item.statement,
+        "old_section": old_evidence.get("section") or old_evidence.get("section_name") or item.statement,
+        "new_section": new_evidence.get("section") or new_evidence.get("section_name") or item.statement,
+        "old_line_text": old_evidence.get("raw_line") or old_evidence.get("raw_text"),
+        "new_line_text": new_evidence.get("raw_line") or new_evidence.get("raw_text"),
+        "old_raw_line": old_evidence.get("raw_line") or old_evidence.get("raw_text"),
+        "new_raw_line": new_evidence.get("raw_line") or new_evidence.get("raw_text"),
+        "old_bbox": old_evidence.get("bbox_value") or old_evidence.get("bbox_row") or old_evidence.get("bounding_box"),
+        "new_bbox": new_evidence.get("bbox_value") or new_evidence.get("bbox_row") or new_evidence.get("bounding_box"),
         "confidence": item.confidence,
         "extraction_engine": new_engine if new_engine != "unknown" else old_engine,
         "evidence_type": evidence_type,
@@ -330,14 +341,51 @@ def _why_verdict(verdict: dict[str, str], mismatches: int, critical: int, missin
     return {"verdict": verdict["label"], "reason": verdict["reason"], "passed": passed, "needs_review": needs_review, "issue_type": "financial" if mismatches or critical else ("extraction_structural" if needs_review else "none")}
 
 
-def _evidence(evidence: Evidence | None, label: str | None, value: float | int | None, statement: str, engine: str) -> dict[str, Any]:
+def _side_evidence(
+    evidence: Evidence | None,
+    label: str | None,
+    value: float | int | None,
+    statement: str,
+    engine: str,
+    document_id: str | None,
+    value_role: str,
+) -> dict[str, Any]:
     if evidence is None:
-        return {"page": None, "section_name": statement, "raw_text": label or "", "bounding_box": None, "value": value, "extraction_method": engine}
+        return {
+            "document_id": document_id,
+            "file_name": document_id,
+            "page": None,
+            "page_number": None,
+            "statement": statement,
+            "statement_name": statement,
+            "section": statement,
+            "section_name": statement,
+            "raw_text": label or "",
+            "raw_line": label or "",
+            "bounding_box": None,
+            "bbox_value": None,
+            "value": value,
+            "value_used": value,
+            "value_role": value_role,
+            "extraction_method": engine,
+            "extraction_engine": engine,
+        }
     payload = evidence.model_dump(mode="json")
+    payload.setdefault("document_id", document_id)
+    payload.setdefault("file_name", payload.get("document_id") or document_id)
+    payload.setdefault("page_number", payload.get("page"))
+    payload.setdefault("statement", payload.get("statement_name") or statement)
+    payload.setdefault("statement_name", statement)
+    payload.setdefault("section", payload.get("section_name") or statement)
     payload.setdefault("section_name", statement)
     payload.setdefault("raw_text", label or "")
-    payload.setdefault("value", value)
-    payload.setdefault("bounding_box", payload.get("bbox_row") or payload.get("bbox_label"))
+    payload.setdefault("raw_line", payload.get("raw_text") or label or "")
+    payload["value_role"] = value_role
+    payload["value"] = value
+    payload["value_used"] = value
+    payload["bbox_value"] = payload.get("bbox_current") if value_role == "current" else payload.get("bbox_previous")
+    payload.setdefault("bounding_box", payload.get("bbox_value") or payload.get("bbox_row") or payload.get("bbox_label"))
+    payload.setdefault("extraction_engine", payload.get("extraction_method") or engine)
     return payload
 
 

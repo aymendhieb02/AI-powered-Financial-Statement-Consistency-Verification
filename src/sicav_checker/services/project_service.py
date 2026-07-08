@@ -240,19 +240,19 @@ class ProjectService:
             if is_old:
                 payload.update(
                     {
-                        "statement": evidence.get("statement_name") or evidence.get("statement") or old_evidence.get("statement_name"),
-                        "section": evidence.get("old_section") or old_evidence.get("section_name"),
-                        "raw_line": evidence.get("old_raw_line") or old_evidence.get("raw_text"),
-                        "bounding_box": evidence.get("old_bbox") or old_evidence.get("bbox_row") or old_evidence.get("bounding_box"),
+                        "statement": evidence.get("statement_name") or evidence.get("statement") or old_evidence.get("statement") or old_evidence.get("statement_name"),
+                        "section": evidence.get("old_section") or old_evidence.get("section") or old_evidence.get("section_name") or evidence.get("statement_name") or evidence.get("statement"),
+                        "raw_line": evidence.get("old_raw_line") or old_evidence.get("raw_line") or old_evidence.get("raw_text"),
+                        "bounding_box": evidence.get("old_bbox") or old_evidence.get("bbox_value") or old_evidence.get("bbox_row") or old_evidence.get("bounding_box"),
                     }
                 )
             elif is_new:
                 payload.update(
                     {
-                        "statement": evidence.get("statement_name") or evidence.get("statement") or new_evidence.get("statement_name"),
-                        "section": evidence.get("new_section") or new_evidence.get("section_name"),
-                        "raw_line": evidence.get("new_raw_line") or new_evidence.get("raw_text"),
-                        "bounding_box": evidence.get("new_bbox") or new_evidence.get("bbox_row") or new_evidence.get("bounding_box"),
+                        "statement": evidence.get("statement_name") or evidence.get("statement") or new_evidence.get("statement") or new_evidence.get("statement_name"),
+                        "section": evidence.get("new_section") or new_evidence.get("section") or new_evidence.get("section_name") or evidence.get("statement_name") or evidence.get("statement"),
+                        "raw_line": evidence.get("new_raw_line") or new_evidence.get("raw_line") or new_evidence.get("raw_text"),
+                        "bounding_box": evidence.get("new_bbox") or new_evidence.get("bbox_value") or new_evidence.get("bbox_row") or new_evidence.get("bounding_box"),
                     }
                 )
         return payload

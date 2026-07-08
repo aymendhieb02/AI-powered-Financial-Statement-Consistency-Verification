@@ -57,26 +57,37 @@ class Evidence(BaseModel):
     line_id: str = ""
     document_id: str = ""
     source_pdf: str = ""
+    file_name: str | None = None
     page: int | None = None
+    page_number: int | None = None
     statement_name: str | None = None
+    statement: str | None = None
     section_name: str | None = None
+    section: str | None = None
     bounding_box: tuple[float, float, float, float] | None = None
     bbox_label: tuple[float, float, float, float] | None = None
     bbox_current: tuple[float, float, float, float] | None = None
     bbox_previous: tuple[float, float, float, float] | None = None
     bbox_row: tuple[float, float, float, float] | None = None
+    bbox_value: tuple[float, float, float, float] | None = None
     table_id: str | None = None
     row_number: int | None = None
     column: str | None = None
+    value_role: str | None = None
     extraction_method: str = "unknown"
+    extraction_engine: str | None = None
     raw_text: str = ""
+    raw_line: str = ""
     normalized_line: str = ""
     label_text: str = ""
     value_text_current: str | None = None
     value_text_previous: str | None = None
+    current_raw: str | None = None
+    previous_raw: str | None = None
     normalized_value: float | int | None = None
     current_value: float | int | None = None
     previous_value: float | int | None = None
+    value_used: float | int | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 

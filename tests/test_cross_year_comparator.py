@@ -29,3 +29,23 @@ def test_renamed_label_is_detected() -> None:
     results = compare_documents(old, new)
     total_actif = next(item for item in results if item.canonical_label == "total_actif")
     assert total_actif.status in {Status.LABEL_RENAMED, Status.CARRY_FORWARD_OK}
+
+
+def test_carry_forward_uses_old_current_and_new_previous_only() -> None:
+    from sicav_checker.domain.models import DocumentMetadata, FinancialDocument, FinancialStatement, StatementRow
+
+    old = FinancialDocument(
+        metadata=DocumentMetadata(year=2023, source_file="2023.pdf"),
+        statements={"etat_resultat": FinancialStatement(name="etat_resultat", rows=[StatementRow(label="TOTAL DES REVENUS DES PLACEMENTS", canonical_label="total_revenus_placements", current_value=1013745, previous_value=474019)])},
+    )
+    new = FinancialDocument(
+        metadata=DocumentMetadata(year=2024, source_file="2024.pdf"),
+        statements={"etat_resultat": FinancialStatement(name="etat_resultat", rows=[StatementRow(label="TOTAL DES REVENUS DES PLACEMENTS", canonical_label="total_revenus_placements", current_value=1004266, previous_value=1013745)])},
+    )
+
+    results = compare_documents(old, new)
+    item = next(result for result in results if result.canonical_label == "total_revenus_placements")
+
+    assert item.old_value == 1013745
+    assert item.new_value == 1013745
+    assert item.status == Status.CARRY_FORWARD_OK
