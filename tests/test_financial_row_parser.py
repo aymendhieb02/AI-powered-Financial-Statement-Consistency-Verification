@@ -311,3 +311,65 @@ def test_page_headers_do_not_create_fake_accounts() -> None:
 
     assert len(rows) == 1
     assert rows[0].label == "Portefeuille-titres"
+
+
+def test_visual_column_parser_preserves_leading_previous_thousand_group() -> None:
+    from sicav_checker.extraction.layout_section_extractor import VisualLine, VisualWord
+
+    header = VisualLine(
+        page=2,
+        top=280.0,
+        bottom=290.0,
+        x0=340.0,
+        x1=520.0,
+        text="Note 2025 2024",
+        words=(
+            VisualWord("Note", 320.0, 280.0, 342.0, 290.0),
+            VisualWord("2025", 392.0, 280.0, 416.0, 290.0),
+            VisualWord("2024", 480.0, 280.0, 504.0, 290.0),
+        ),
+    )
+    line = VisualLine(
+        page=2,
+        top=306.0,
+        bottom=316.0,
+        x0=90.0,
+        x1=515.0,
+        text="TOTAL DES REVENUS DES PLACEMENTS 956 160 1 004 266",
+        words=(
+            VisualWord("TOTAL", 90.5, 306.0, 123.9, 316.0),
+            VisualWord("DES", 126.7, 306.0, 147.2, 316.0),
+            VisualWord("REVENUS", 150.0, 306.0, 198.4, 316.0),
+            VisualWord("DES", 201.1, 306.0, 221.6, 316.0),
+            VisualWord("PLACEMENTS", 224.4, 306.0, 293.3, 316.0),
+            VisualWord("956", 388.1, 306.0, 404.8, 316.0),
+            VisualWord("160", 407.6, 306.0, 424.2, 316.0),
+            VisualWord("1", 470.1, 306.0, 475.7, 316.0),
+            VisualWord("004", 478.4, 306.0, 495.2, 316.0),
+            VisualWord("266", 497.9, 306.0, 514.6, 316.0),
+        ),
+    )
+
+    rows = extract_rows(
+        "",
+        "etat_resultat",
+        visual_lines=[header, line],
+        document_id="2025_maxula_placement_sicav_efd311225.pdf",
+        source_file="2025_maxula_placement_sicav_efd311225.pdf",
+        extraction_method="pdfplumber_layout",
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.label == "TOTAL DES REVENUS DES PLACEMENTS"
+    assert row.current_value == 956160
+    assert row.previous_value == 1004266
+    assert row.page == 2
+    assert row.evidence is not None
+    assert row.evidence.page_number == 2
+    assert row.evidence.document_id == "2025_maxula_placement_sicav_efd311225.pdf"
+    assert row.evidence.source_pdf == "2025_maxula_placement_sicav_efd311225.pdf"
+    assert row.evidence.current_raw == "956 160"
+    assert row.evidence.previous_raw == "1 004 266"
+    assert row.evidence.bbox_current is not None
+    assert row.evidence.bbox_previous is not None

@@ -79,6 +79,13 @@ HEADER_PREFIX_PATTERNS = (
 
 
 @dataclass(frozen=True)
+class ColumnBoundaries:
+    current_left: float
+    split_x: float
+    previous_left: float
+
+
+@dataclass(frozen=True)
 class ParsedCandidate:
     label: str
     current_raw: str
@@ -197,13 +204,20 @@ def extract_rows(
     pending_label = ""
     parent_context = ""
     variation_period_counts: dict[str, int] = {}
+    column_boundaries: ColumnBoundaries | None = None
     line_sources = visual_lines if visual_lines is not None else section_text.splitlines()
 
     for source in line_sources:
         visual_line = source if isinstance(source, VisualLine) else None
         raw_line = visual_line.text if visual_line else str(source)
+        header_boundaries = _column_boundaries_from_header(visual_line) if visual_line else None
+        if header_boundaries:
+            column_boundaries = header_boundaries
         clean, header_cleaned = _clean_extracted_line(raw_line)
         if not clean:
+            continue
+        if header_boundaries and _is_column_header_line(clean):
+            pending_label = ""
             continue
 
         context = _parent_context_for_heading(clean)
@@ -214,7 +228,9 @@ def extract_rows(
         if _is_pure_section_line(clean):
             continue
 
-        parsed = parse_financial_row(clean)
+        parsed = _parse_visual_financial_row(visual_line, column_boundaries) if visual_line else None
+        if parsed is None:
+            parsed = parse_financial_row(clean)
         if parsed is None:
             if _looks_like_label_continuation(clean):
                 pending_label = f"{pending_label} {clean}".strip()
@@ -274,6 +290,101 @@ def extract_rows(
         )
 
     return rows
+
+def _column_boundaries_from_header(visual_line: VisualLine) -> ColumnBoundaries | None:
+    year_words = []
+    for word in visual_line.words:
+        token = word.text.strip()
+        if re.fullmatch(r"(?:19|20)\d{2}", token) or re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2,4}", token):
+            year_words.append(word)
+    if len(year_words) < 2:
+        return None
+    ordered = sorted(year_words[-2:], key=lambda item: item.x0)
+    current, previous = ordered[0], ordered[1]
+    current_center = (current.x0 + current.x1) / 2
+    previous_center = (previous.x0 + previous.x1) / 2
+    return ColumnBoundaries(
+        current_left=max(0.0, current.x0 - 20.0),
+        split_x=(current_center + previous_center) / 2,
+        previous_left=max(0.0, previous.x0 - 20.0),
+    )
+
+
+def _is_column_header_line(line: str) -> bool:
+    normalized = normalize_label(line)
+    if not normalized:
+        return False
+    tokens = normalized.split("_")
+    header_tokens = {"note", "annee", "exercice"}
+    year_or_date_count = sum(1 for token in tokens if re.fullmatch(r"(?:19|20)?\d{2,4}", token))
+    return year_or_date_count >= 2 and any(token in header_tokens for token in tokens)
+
+def _parse_visual_financial_row(visual_line: VisualLine | None, boundaries: ColumnBoundaries | None) -> tuple[str, str, str] | None:
+    if visual_line is None or not visual_line.words:
+        return None
+    if boundaries:
+        parsed = _parse_visual_row_with_boundaries(visual_line, boundaries)
+        if parsed:
+            return parsed
+    return _parse_visual_row_by_numeric_clusters(visual_line)
+
+
+def _parse_visual_row_with_boundaries(visual_line: VisualLine, boundaries: ColumnBoundaries) -> tuple[str, str, str] | None:
+    current_words = [word for word in visual_line.words if _is_visual_value_token(word.text) and boundaries.current_left <= _word_center(word) < boundaries.split_x]
+    previous_words = [word for word in visual_line.words if _is_visual_value_token(word.text) and _word_center(word) >= boundaries.split_x]
+    if not current_words or not previous_words:
+        return None
+    label_words = [word.text for word in visual_line.words if word.x1 < min(word.x0 for word in current_words)]
+    return _parsed_from_visual_parts(label_words, current_words, previous_words)
+
+
+def _parse_visual_row_by_numeric_clusters(visual_line: VisualLine) -> tuple[str, str, str] | None:
+    words = list(visual_line.words)
+    suffix_start = len(words)
+    for index in range(len(words) - 1, -1, -1):
+        if _is_visual_value_token(words[index].text):
+            suffix_start = index
+            continue
+        break
+    value_words = words[suffix_start:]
+    if len(value_words) < 2:
+        return None
+    clusters: list[list] = []
+    for word in value_words:
+        if not clusters:
+            clusters.append([word])
+            continue
+        gap = word.x0 - clusters[-1][-1].x1
+        if gap > 18.0:
+            clusters.append([word])
+        else:
+            clusters[-1].append(word)
+    if len(clusters) < 2:
+        return None
+    current_words, previous_words = clusters[-2], clusters[-1]
+    label_words = [word.text for word in words[: suffix_start + sum(len(cluster) for cluster in clusters[:-2])]]
+    return _parsed_from_visual_parts(label_words, current_words, previous_words)
+
+
+def _parsed_from_visual_parts(label_words: list[str], current_words: list, previous_words: list) -> tuple[str, str, str] | None:
+    current_raw = " ".join(word.text for word in current_words).strip()
+    previous_raw = " ".join(word.text for word in previous_words).strip()
+    if not _valid_value_tokens(current_raw.split()) or not _valid_value_tokens(previous_raw.split()):
+        return None
+    label, _note_removed, _note_value = _strip_trailing_note(label_words)
+    label = _strip_category_prefix(label)
+    if not label or is_bad_label(label):
+        return None
+    return label, current_raw, previous_raw
+
+
+def _word_center(word: object) -> float:
+    return (float(getattr(word, "x0")) + float(getattr(word, "x1"))) / 2
+
+
+def _is_visual_value_token(token: str) -> bool:
+    stripped = token.strip()
+    return stripped == "-" or _is_integer_piece(stripped) or bool(re.fullmatch(r"-?\d[\d.,]*%?", stripped.strip("()")))
 
 def parse_financial_row(line: str) -> tuple[str, str, str] | None:
     tokens = line.split()
